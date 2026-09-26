@@ -12,10 +12,38 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      mysql-sandbox:
+        image: mysql:8.4.11
+        env:
+          MYSQL_ROOT_PASSWORD: ci-test-only-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-test-only-password --silent"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Unit tests
+        # Legacy tests under test/application require a host installation of
+        # isolate and cgroups; src tests are hermetic and include MySQL.
+        run: go test ./src/...
+        env:
+          MYSQL_SANDBOX_TEST_DSN: root:ci-test-only-password@tcp(127.0.0.1:3306)/?timeout=5s&readTimeout=35s&writeTimeout=10s
+
+      - name: Static analysis
+        run: go vet ./...
 
       - name: set up Docker Build
         uses: docker/setup-buildx-action@v3

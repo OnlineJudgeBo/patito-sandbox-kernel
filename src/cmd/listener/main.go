@@ -40,7 +40,7 @@ func main() {
 
 	fileSystemProvider := testcaseprovider.NewFileSystemTestCaseProvider(testCasesPath)
 
-	handler := func(msg domain.EvaluationInput) error {
+	handler := func(msg domain.EvaluationInput) (domain.EvaluationResult, error) {
 		log.Printf("Received submission ID: %s | Language: %s | Problem: %d",
 			msg.ID, msg.Language, msg.ProblemID)
 
@@ -53,12 +53,12 @@ func main() {
 		result, err := processor.ProcessRequest()
 		if err != nil {
 			log.Printf("Error processing submission %s: %v", msg.ID, err)
-			return err
+			return result, err
 		}
 
 		log.Printf("Successfully processed submission %s | Passed: %d/%d",
 			result.SubmitID, result.TotalPassed, result.TotalCases)
-		return nil
+		return result, nil
 	}
 
 	if err := rmq.Listen("submission_queue", handler); err != nil {

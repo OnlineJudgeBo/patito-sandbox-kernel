@@ -33,9 +33,16 @@ type EvaluationMessage struct {
 	ReplyQueue string                 `json:"reply_queue"`
 }
 
-func (r *RabbitService) Listen(queueName string, handler func(domain.EvaluationInput) error) error {
+func (r *RabbitService) Listen(queueName string, handler func(domain.EvaluationInput) (domain.EvaluationResult, error)) error {
+	queue, err := r.Channel.QueueDeclare(queueName, true, false, false, false, nil)
+	if err != nil {
+		return fmt.Errorf("failed to declare queue %s: %w", queueName, err)
+	}
+	if err := r.Channel.Qos(1, 0, false); err != nil {
+		return fmt.Errorf("failed to configure consumer prefetch: %w", err)
+	}
 	msgs, err := r.Channel.Consume(
-		queueName,
+		queue.Name,
 		"",
 		false,
 		false,
@@ -50,18 +57,38 @@ func (r *RabbitService) Listen(queueName string, handler func(domain.EvaluationI
 	log.Printf("[*] Listening on queue: %s", queueName)
 
 	for d := range msgs {
-		var msg domain.EvaluationInput
-
-		if err := json.Unmarshal(d.Body, &msg); err != nil {
+		var envelope EvaluationMessage
+		if err := json.Unmarshal(d.Body, &envelope); err != nil {
 			log.Printf("[!] Failed to parse message: %v", err)
 			d.Nack(false, false)
 			continue
 		}
+		msg := envelope.Input
+		replyQueue := envelope.ReplyQueue
+		// Backward-compatible support for the original raw task contract.
+		if msg.ID == "" {
+			if err := json.Unmarshal(d.Body, &msg); err != nil {
+				d.Nack(false, false)
+				continue
+			}
+		}
 
-		if err := handler(msg); err != nil {
+		result, err := handler(msg)
+		if err != nil {
 			log.Printf("[!] Error handling message: %v", err)
 			d.Nack(false, false)
 			continue
+		}
+		if replyQueue != "" {
+			if _, err := r.Channel.QueueDeclare(replyQueue, true, false, false, false, nil); err != nil {
+				d.Nack(false, true)
+				continue
+			}
+			if err := r.Publish(replyQueue, result); err != nil {
+				log.Printf("[!] Failed to publish result: %v", err)
+				d.Nack(false, true)
+				continue
+			}
 		}
 
 		d.Ack(false)
@@ -79,8 +106,9 @@ func (r *RabbitService) Publish(queueName string, result domain.EvaluationResult
 	return r.Channel.Publish(
 		"", queueName, false, false,
 		amqp.Publishing{
-			ContentType: "application/json",
-			Body:        data,
+			ContentType:  "application/json",
+			DeliveryMode: amqp.Persistent,
+			Body:         data,
 		},
 	)
 }
