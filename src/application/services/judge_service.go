@@ -75,9 +75,7 @@ func (j *JudgeService) Evaluate(boxID int, submission domain.Submission, tests [
 		result.MemoryKB = max(result.MemoryKB, outcome.MemoryKB)
 		if outcome.Verdict != domain.OJ_AC {
 			result.Verdict = outcome.Verdict
-			if outcome.Verdict == domain.OJ_RE {
-				result.RuntimeOutput = detail
-			}
+			result.RuntimeOutput = detail
 			break
 		}
 	}
@@ -194,7 +192,31 @@ func (j *JudgeService) runTest(boxID int, language domain.Language, artifacts st
 		return outcome, "No se pudo comparar la salida: " + err.Error()
 	}
 	outcome.Verdict = verdict
+	if verdict != domain.OJ_AC {
+		return outcome, differenceReport(test, userOutput)
+	}
 	return outcome, ""
+}
+
+// differenceReport shows the failed test like the previous judge did: input, answer and output, each cut short.
+func differenceReport(test domain.TestCase, userOutput string) string {
+	return "Entrada \n=================\n" + excerpt(test.Input, 512) +
+		"\n=================\nRespuesta Correcta:\n" + excerpt(test.Output, 900) +
+		"\n-----------------\nTu respuesta:\n" + excerpt(userOutput, 900) +
+		"\n=================\n"
+}
+
+func excerpt(path string, limit int64) string {
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	data, _ := io.ReadAll(io.LimitReader(file, limit+1))
+	if int64(len(data)) > limit {
+		return string(data[:limit]) + "\n...\n"
+	}
+	return string(data)
 }
 
 // An output several times longer than the answer is an output limit, not a wrong answer.

@@ -116,6 +116,10 @@ func TestStopsAtTheFirstTestThatIsNotAccepted(t *testing.T) {
 	if result.Verdict != domain.OJ_WA || len(result.Tests) != 2 {
 		t.Fatalf("expected wrong answer on the second test: %+v", result)
 	}
+	want := "Entrada \n=================\n2\n\n=================\nRespuesta Correcta:\n5\n\n-----------------\nTu respuesta:\n2\n\n=================\n"
+	if result.RuntimeOutput != want {
+		t.Fatalf("the failed test must be reported: %q", result.RuntimeOutput)
+	}
 }
 
 func TestWhitespaceDifferenceIsAPresentationError(t *testing.T) {
