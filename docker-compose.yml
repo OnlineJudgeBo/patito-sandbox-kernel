@@ -1,39 +1,11 @@
+# Example: the judge next to an existing Patito database.
+# /home/judge must hold etc/judge.conf and data/<problem_id>/<name>.in|.out, as with the previous judge.
 services:
-  rabbitmq:
-    image: rabbitmq:4.0-management
-    container_name: rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-
-  isolate-wrapper:
+  patito-judge:
+    build: .
+    image: patito-sandbox-kernel:develop
     restart: always
-    container_name: isolate-wrapper
-    build:
-      context: .
-      dockerfile: Dockerfile
-    depends_on:
-      - rabbitmq
-    env_file:
-      - .env
+    # isolate needs namespaces and its own control groups.
+    privileged: true
     volumes:
-      - .env:/app/.env
-    #working_dir: /app
-    #command: go run src/cmd/listener/main.go
-#
-  callback-debug:
-    image: mendhak/http-https-echo
-    container_name: callback-debug
-    ports:
-      - "8085:8080"
-    environment:
-      - ECHO_METHOD=ALL
-      - ECHO_HEADERS=true
-      - ECHO_BODY=true
-volumes:
-  rabbitmq_data:
+      - ./judge-home:/home/judge
