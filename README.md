@@ -3,12 +3,12 @@
 The judge of Patito Online Judge. It takes pending submissions from the judge database, compiles
 and runs them inside [isolate](https://github.com/ioi/isolate), and writes the verdict back.
 
-It is a drop-in replacement for `onlinejudge-kernel`: it reads the same `judge.conf`, the same
-`data/<problem_id>/` folders and the same tables, so the web, the admin API and the IDE need no change.
+It is a drop-in replacement for `onlinejudge-kernel`: it reads the same `data/<problem_id>/`
+folders and the same tables, so the web, the admin API and the IDE need no change.
 
 ## How it works
 
-1. Every `OJ_SLEEP_TIME` seconds it looks for rows of `solution` with `result < 2`.
+1. Every `sleepSeconds` seconds it looks for rows of `solution` with `result < 2`.
 2. It claims a row with an atomic update, so several judges can share one database.
 3. The source is compiled inside a sandbox box.
 4. Each test runs in a fresh box with the limits of the problem. Judging stops at the first test
@@ -31,20 +31,38 @@ Verdicts use the codes the rest of the platform already knows: 4 accepted, 5 pre
 | 21 | JavaScript | Node.js 18 |
 | 20 | PSeInt | `pseint` and `psexport` translate to C++, then g++ |
 
-Java, Python and JavaScript get the extra time and memory of `OJ_JAVA_TIME_BONUS` and `OJ_JAVA_MEMORY_BONUS`.
+Java, Python and JavaScript get the extra time and memory of `bonusTimeSeconds` and `bonusMemoryMB`.
 A submission in any other language is left pending.
 
 ## Configuration
 
-`$CONF` (default `/home/judge/etc/judge.conf`), the file of the previous judge:
+`$CONF` (default `/home/judge/etc/judge.json`). Only the database keys are required; an unknown key is an error.
 
-| Key | Meaning |
-| --- | --- |
-| `OJ_HOST_NAME`, `OJ_PORT_NUMBER`, `OJ_USER_NAME`, `OJ_PASSWORD`, `OJ_DB_NAME` | database |
-| `OJ_RUNNING` | submissions judged at the same time |
-| `OJ_SLEEP_TIME` | seconds between two looks at the queue |
-| `OJ_LANG_SET` | language ids this judge may take |
-| `OJ_JAVA_TIME_BONUS`, `OJ_JAVA_MEMORY_BONUS`, `OJ_JAVA_XMS`, `OJ_JAVA_XMX` | JVM and interpreter allowances |
+```json
+{
+  "dbHost": "patito-db",
+  "dbPort": 3306,
+  "dbUser": "judge",
+  "dbPassword": "secret",
+  "dbName": "jol",
+  "parallel": 2,
+  "sleepSeconds": 1,
+  "languages": [0, 1, 3, 16, 18, 19, 20, 21],
+  "javaXms": "-Xms64m",
+  "javaXmx": "-Xmx128m",
+  "bonusTimeSeconds": 2,
+  "bonusMemoryMB": 512
+}
+```
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `dbHost`, `dbPort`, `dbUser`, `dbPassword`, `dbName` | database | port 3306 |
+| `parallel` | submissions judged at the same time | 1 |
+| `sleepSeconds` | seconds between two looks at the queue | 5 |
+| `languages` | language ids this judge may take | every supported one |
+| `javaXms`, `javaXmx` | JVM heap flags | `-Xms64m`, `-Xmx128m` |
+| `bonusTimeSeconds`, `bonusMemoryMB` | extra allowance for Java, Python and JavaScript | 0 |
 
 Tests are read from `$JUDGE_HOME/data/<problem_id>/` (default `/home/judge`): every `<name>.in`
 with its `<name>.out`, in name order.

@@ -42,12 +42,15 @@ func TestBuildOptionsAppliesEveryLimit(t *testing.T) {
 	}
 }
 
-func TestConfigReadsTheSameFileAsThePreviousJudge(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "judge.conf")
-	os.WriteFile(path, []byte("OJ_HOST_NAME=db\nOJ_USER_NAME = judge\nOJ_PASSWORD=p=w\nOJ_DB_NAME=jol\nOJ_PORT_NUMBER=3307\n"+
-		"OJ_RUNNING=4\nOJ_SLEEP_TIME=2\nOJ_JAVA_TIME_BONUS=2\nOJ_JAVA_MEMORY_BONUS=64\nOJ_JAVA_XMX=-Xmx256m\nOJ_LANG_SET=0,1, 3,19\nOJ_SIM_ENABLE=1\n"), 0600)
+func TestConfigReadsJudgeJSON(t *testing.T) {
+	write := func(content string) string {
+		path := filepath.Join(t.TempDir(), "judge.json")
+		os.WriteFile(path, []byte(content), 0600)
+		return path
+	}
 
-	settings, err := config.Load(path)
+	settings, err := config.Load(write(`{"dbHost":"db","dbUser":"judge","dbPassword":"p=w","dbName":"jol","dbPort":3307,
+		"parallel":4,"sleepSeconds":2,"bonusTimeSeconds":2,"bonusMemoryMB":64,"javaXmx":"-Xmx256m","languages":[0,1,3,19]}`))
 
 	if err != nil || settings.DBHost != "db" || settings.DBUser != "judge" || settings.DBPassword != "p=w" || settings.DBPort != 3307 {
 		t.Fatalf("unexpected database settings: %+v (%v)", settings, err)
@@ -58,8 +61,17 @@ func TestConfigReadsTheSameFileAsThePreviousJudge(t *testing.T) {
 	if !reflect.DeepEqual(settings.Languages, []int{0, 1, 3, 19}) {
 		t.Fatalf("unexpected languages: %v", settings.Languages)
 	}
-	if _, err := config.Load(filepath.Join(t.TempDir(), "missing.conf")); err == nil {
-		t.Fatal("a missing file must be an error")
+	if settings, err := config.Load(write(`{"dbHost":"db","dbUser":"judge","dbName":"jol"}`)); err != nil || settings.DBPort != 3306 || settings.Parallel != 1 {
+		t.Fatalf("unexpected defaults: %+v (%v)", settings, err)
+	}
+	for name, path := range map[string]string{
+		"a missing file":     filepath.Join(t.TempDir(), "missing.json"),
+		"a misspelled key":   write(`{"dbHost":"db","dbUser":"judge","dbName":"jol","paralel":4}`),
+		"a missing database": write(`{"dbHost":"db"}`),
+	} {
+		if _, err := config.Load(path); err == nil {
+			t.Fatalf("%s must be an error", name)
+		}
 	}
 }
 

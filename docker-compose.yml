@@ -1,5 +1,5 @@
 # Example: the judge next to an existing Patito database.
-# /home/judge must hold etc/judge.conf and data/<problem_id>/<name>.in|.out, as with the previous judge.
+# /home/judge must hold etc/judge.json and data/<problem_id>/<name>.in|.out, as with the previous judge.
 services:
   patito-judge:
     build: .
