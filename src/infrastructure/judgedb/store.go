@@ -150,6 +150,12 @@ func (s *Store) AcceptedInContest(contestID int) ([]domain.Accepted, error) {
 	return accepted, rows.Err()
 }
 
+func (s *Store) SaveSimilarity(found domain.Similarity) error {
+	_, err := s.db.Exec("INSERT INTO similar_code (solution_id, similar_s_id, percentage) VALUES (?, ?, ?)"+
+		" ON DUPLICATE KEY UPDATE percentage = VALUES(percentage)", found.SolutionID, found.SimilarID, found.Percentage)
+	return err
+}
+
 func (s *Store) ReplaceSimilarity(contestID int, found []domain.Similarity) error {
 	tx, err := s.db.Begin()
 	if err != nil {

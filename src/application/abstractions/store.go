@@ -62,4 +62,6 @@ type SimilarityStore interface {
 	AcceptedInContest(contestID int) ([]domain.Accepted, error)
 	// ReplaceSimilarity deletes what was stored for the contest and saves the new result.
 	ReplaceSimilarity(contestID int, found []domain.Similarity) error
+	// SaveSimilarity stores the closest match of one solution.
+	SaveSimilarity(found domain.Similarity) error
 }

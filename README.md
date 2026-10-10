@@ -100,9 +100,12 @@ uses the inputs of `custom_input_case`, ends with result 13 and the program outp
 ## Similarity check
 
 Accepted contest sources are kept in `data/contests/<contest>/problem/<problem>/<solution>.<ext>`.
-When the admin API leaves `data/contests/<contest>/similarity.request`, the judge compares them
-with [Dolos](https://dolos.ugent.be), deletes the previous rows of that contest in `similar_code`
-and saves, for every solution, its closest match from another user when it is 70% similar or more.
+Every accepted contest submission is compared right after its verdict is saved, with
+[Dolos](https://dolos.ugent.be), against the accepted solutions other users sent to the same
+problem in the same language. Its closest match goes to `similar_code` when it is 70% similar or more.
+
+When the admin API leaves `data/contests/<contest>/similarity.request`, the whole contest is
+checked again: the previous rows of that contest are deleted and every solution gets its closest match.
 
 ## Before going to production
 
