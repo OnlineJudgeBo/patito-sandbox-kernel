@@ -1,28 +1,21 @@
 package domain
 
-type EvaluationInput struct {
-	ID         string     `json:"id"`
-	UniqID     string     `json:"uniqId"`
-	BoxID      int        `json:"boxId"`
-	ProblemID  int        `json:"problemID"`
-	Language   string     `json:"language"`
-	SourceCode string     `json:"sourceCode"`
-	RunLimits  RunLimits  `json:"runLimits"`
-	TestCases  []TestCase `json:"testCases"`
+// Submission is one row of the solution table together with what is needed to judge it.
+type Submission struct {
+	ID         int
+	ProblemID  int
+	ContestID  int
+	UserID     string
+	LanguageID int
+	Source     string
+	// Limits of the problem, before the language bonus.
+	TimeLimitSec  int
+	MemoryLimitMB int
 }
 
-type RunLimits struct {
-	Time   int `json:"time"`
-	Memory int `json:"memory"`
-	Output int `json:"output"`
-}
-
+// TestCase points to the input and expected output files of one test.
 type TestCase struct {
-	Input  string `json:"input"`
-	Output string `json:"output"`
-}
-
-type SandboxLog struct {
-	ExecutionTime int
-	MemoryUsed    int
+	Name   string
+	Input  string
+	Output string
 }

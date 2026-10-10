@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/samuelloza/isolate-wrapper/src/application/abstractions"
@@ -19,9 +20,10 @@ func NewFileSystemTestCaseProvider(basePath string) abstractions.TestCaseProvide
 	return &FileSystemTestCaseProvider{BasePath: basePath}
 }
 
-func (p *FileSystemTestCaseProvider) GetTestCases(problemID string) ([]domain.TestCase, error) {
+// GetTestCases pairs every <name>.in of the problem folder with its <name>.out, sorted by name.
+func (p *FileSystemTestCaseProvider) GetTestCases(problemID int) ([]domain.TestCase, error) {
 	testCases := []domain.TestCase{}
-	dir := filepath.Join(p.BasePath, problemID)
+	dir := filepath.Join(p.BasePath, strconv.Itoa(problemID))
 
 	files, err := os.ReadDir(dir)
 	if err != nil {
@@ -36,10 +38,10 @@ func (p *FileSystemTestCaseProvider) GetTestCases(problemID string) ([]domain.Te
 		fullPath := filepath.Join(dir, name)
 
 		if strings.HasSuffix(name, ".in") {
-			key := strings.ReplaceAll(name, ".in", "")
+			key := strings.TrimSuffix(name, ".in")
 			inputPaths[key] = fullPath
 		} else if strings.HasSuffix(name, ".out") {
-			key := strings.ReplaceAll(name, ".out", "")
+			key := strings.TrimSuffix(name, ".out")
 			outputPaths[key] = fullPath
 		}
 	}
@@ -54,6 +56,7 @@ func (p *FileSystemTestCaseProvider) GetTestCases(problemID string) ([]domain.Te
 
 	for _, k := range keys {
 		tc := domain.TestCase{
+			Name:   k,
 			Input:  inputPaths[k],
 			Output: outputPaths[k],
 		}

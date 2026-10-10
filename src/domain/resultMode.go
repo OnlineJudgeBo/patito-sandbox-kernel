@@ -1,37 +1,37 @@
 package domain
 
-type TestCaseResult struct {
-	Index         int
-	Passed        bool
-	Expected      string
-	Received      string
-	ExecutionTime float64
-	MemoryUsed    int
-	ErrorMessage  string
-	Status        int
-}
-
-type EvaluationResult struct {
-	SubmitID    string
-	Results     []TestCaseResult
-	TotalPassed int
-	TotalCases  int
-	Status      int
-}
-
+// Verdict codes stored in solution.result. They are shared with the web, the API and the IDE.
 const (
-	OJ_WT0 = 0  // Wait 0
-	OJ_WT1 = 1  // Wait 1
-	OJ_CI  = 2  // Compiling Input Error
-	OJ_RI  = 3  // Running Input Error
-	OJ_AC  = 4  // Accepted
-	OJ_PE  = 5  // Presentation Error
-	OJ_WA  = 6  // Wrong Answer
-	OJ_TL  = 7  // Time Limit Exceeded
-	OJ_ML  = 8  // Memory Limit Exceeded
-	OJ_OL  = 9  // Output Limit Exceeded
-	OJ_RE  = 10 // Runtime Error
-	OJ_CE  = 11 // Compilation Error
-	OJ_CO  = 12 // Compiler Output
-	OJ_TR  = 13 // Truncated Output
+	OJ_WT0 = 0  // pending
+	OJ_WT1 = 1  // pending rejudge
+	OJ_CI  = 2  // compiling
+	OJ_RI  = 3  // running
+	OJ_AC  = 4  // accepted
+	OJ_PE  = 5  // presentation error
+	OJ_WA  = 6  // wrong answer
+	OJ_TL  = 7  // time limit exceeded
+	OJ_ML  = 8  // memory limit exceeded
+	OJ_OL  = 9  // output limit exceeded
+	OJ_RE  = 10 // runtime error
+	OJ_CE  = 11 // compilation error
 )
+
+// TestResult is the outcome of one test case.
+type TestResult struct {
+	Name     string
+	Verdict  int
+	TimeMs   int
+	MemoryKB int
+}
+
+// Result is what the judge writes back for a submission.
+type Result struct {
+	Verdict  int
+	TimeMs   int
+	MemoryKB int
+	// Compiler output, kept when the verdict is OJ_CE.
+	CompileOutput string
+	// Why the program failed, kept when the verdict is OJ_RE.
+	RuntimeOutput string
+	Tests         []TestResult
+}

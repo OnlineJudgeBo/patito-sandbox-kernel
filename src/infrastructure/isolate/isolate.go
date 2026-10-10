@@ -4,108 +4,99 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/samuelloza/isolate-wrapper/src/application/abstractions"
 )
 
-type IsolateSandbox struct{}
+const binary = "/usr/local/bin/isolate"
 
-func (s *IsolateSandbox) Init(boxID int) error {
-	cmd := exec.Command("/usr/local/bin/isolate", "--box-id", fmt.Sprint(boxID), "--cg", "--init")
-	output, err := cmd.CombinedOutput()
+// IsolateSandbox runs programs with ioi/isolate using control groups, so memory is accounted for
+// the whole process tree and not per process.
+type IsolateSandbox struct {
+	// MetaDir holds one meta file per box; it must not be visible from inside the boxes.
+	MetaDir string
+}
+
+func (s *IsolateSandbox) Init(boxID int) (string, error) {
+	// A box left behind by a crash would make --init fail.
+	exec.Command(binary, "--cg", fmt.Sprintf("--box-id=%d", boxID), "--cleanup").Run()
+	output, err := exec.Command(binary, "--cg", fmt.Sprintf("--box-id=%d", boxID), "--init").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to initialize sandbox: %s", string(output))
+		return "", fmt.Errorf("isolate --init: %s", strings.TrimSpace(string(output)))
 	}
-	return nil
+	return filepath.Join(strings.TrimSpace(string(output)), "box"), nil
 }
 
 func (s *IsolateSandbox) Cleanup(boxID int) error {
-	cmd := exec.Command("/usr/local/bin/isolate", "--box-id", fmt.Sprint(boxID), "--cg", "--cleanup")
-	_, err := cmd.Output()
-	return err
+	return exec.Command(binary, "--cg", fmt.Sprintf("--box-id=%d", boxID), "--cleanup").Run()
 }
 
-func (s *IsolateSandbox) Run(boxID int, caseIndex int) (abstractions.SandboxLogData, int) {
-	opts := s.BuildBoxOptions(boxID, caseIndex)
-	opts = append(opts, "--", "/source/Main")
+func (s *IsolateSandbox) Run(boxID int, request abstractions.RunRequest) (abstractions.RunReport, error) {
+	meta := filepath.Join(s.MetaDir, fmt.Sprintf("meta-%d", boxID))
+	os.Remove(meta)
+	args := BuildOptions(boxID, meta, request)
 
-	cmd := exec.Command("/usr/local/bin/isolate", opts...)
-	output, _ := cmd.CombinedOutput()
-
-	log, err := s.ReadLog(boxID)
+	output, runErr := exec.Command(binary, args...).CombinedOutput()
+	data, err := os.ReadFile(meta)
 	if err != nil {
-		return abstractions.SandboxLogData{}, abstractions.OJ_WT0
+		return abstractions.RunReport{}, fmt.Errorf("isolate left no meta file (%v): %s", runErr, strings.TrimSpace(string(output)))
 	}
-
-	execTime, _ := strconv.ParseFloat(log["time"], 64)
-	memUsed, _ := strconv.Atoi(log["cg-mem"])
-
-	if log["exitcode"] != "0" {
-		fmt.Printf("%s\n", output)
-		fmt.Printf("Error to execute Box id %d:\n%s\n", boxID, log["message"]+string(output))
-		if log["status"] == "TO" {
-			return abstractions.SandboxLogData{
-				ExecutionTime: execTime,
-				MemoryUsed:    memUsed,
-			}, abstractions.OJ_TL
-		}
-
-		if log["status"] == "SG" && log["exitsig"] == "25" {
-			return abstractions.SandboxLogData{
-				ExecutionTime: execTime,
-				MemoryUsed:    memUsed,
-			}, abstractions.OJ_OL
-		}
-		return abstractions.SandboxLogData{
-			ExecutionTime: execTime,
-			MemoryUsed:    memUsed,
-		}, abstractions.OJ_RE
-	}
-
-	return abstractions.SandboxLogData{
-		ExecutionTime: execTime,
-		MemoryUsed:    memUsed,
-	}, -1
+	return ParseMeta(string(data)), nil
 }
 
-func (s *IsolateSandbox) BuildBoxOptions(boxID int, caseIndex int) []string {
-	tmpDirectory := fmt.Sprintf("/tmp/patito-wrapper-%d", boxID)
-	sandboxPath := "/source"
-	return []string{
-		fmt.Sprintf("--box-id=%d", boxID),
+// BuildOptions is exported for the tests: the limits a submission gets are decided here.
+func BuildOptions(boxID int, meta string, request abstractions.RunRequest) []string {
+	args := []string{
 		"--cg",
-		fmt.Sprintf("--dir=/source=%s:rw", tmpDirectory),
-		fmt.Sprintf("--stdin=%s", fmt.Sprintf("%s/%s", sandboxPath, "input.txt")),
-		fmt.Sprintf("--stdout=%s", fmt.Sprintf("/box/%s", "user_output.txt")),
-		fmt.Sprintf("--stderr=%s", fmt.Sprintf("/box/%s", "error.txt")),
-		fmt.Sprintf("--meta=%s", fmt.Sprintf("%s/meta", tmpDirectory)),
-		fmt.Sprintf("--fsize=%d", 1024),
-		fmt.Sprintf("--cg-mem=%d", 1024),
-		fmt.Sprintf("--time=%.2f", 1.0),
-		fmt.Sprintf("--wall-time=%.2f", 1.0),
-		fmt.Sprintf("--extra-time=%.2f", 0.5),
-		"--run",
+		fmt.Sprintf("--box-id=%d", boxID),
+		"--meta=" + meta,
+		fmt.Sprintf("--cg-mem=%d", request.MemoryKB),
+		fmt.Sprintf("--time=%.3f", request.TimeSec),
+		// Wall time catches programs that sleep or block instead of burning CPU.
+		fmt.Sprintf("--wall-time=%.3f", request.TimeSec*3+5),
+		"--extra-time=0.5",
+		fmt.Sprintf("--fsize=%d", request.OutputKB),
+		fmt.Sprintf("--processes=%d", max(request.Processes, 1)),
+		// Compilers and runtimes need their configuration and a search path.
+		"--dir=/etc",
+		"--env=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"--env=HOME=/box",
+		"--env=LANG=C.UTF-8",
 	}
+	if request.Stdin != "" {
+		args = append(args, "--stdin="+request.Stdin)
+	}
+	if request.Stdout != "" {
+		args = append(args, "--stdout="+request.Stdout)
+	}
+	if request.Stderr != "" {
+		args = append(args, "--stderr="+request.Stderr)
+	} else {
+		args = append(args, "--stderr-to-stdout")
+	}
+	args = append(args, "--run", "--")
+	return append(args, request.Args...)
 }
 
-func (s *IsolateSandbox) ReadLog(boxID int) (map[string]string, error) {
-	logFile := fmt.Sprintf("/tmp/patito-wrapper-%d/meta", boxID)
-	data, err := os.ReadFile(logFile)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make(map[string]string)
-	for _, line := range strings.Split(string(data), "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) == 2 {
-			result[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+// ParseMeta reads the "key:value" lines isolate writes after a run.
+func ParseMeta(text string) abstractions.RunReport {
+	values := map[string]string{}
+	for _, line := range strings.Split(text, "\n") {
+		if key, value, found := strings.Cut(line, ":"); found {
+			values[strings.TrimSpace(key)] = strings.TrimSpace(value)
 		}
 	}
-	return result, nil
+	report := abstractions.RunReport{
+		Status:    values["status"],
+		OOMKilled: values["cg-oom-killed"] == "1",
+		Message:   values["message"],
+	}
+	report.ExitCode, _ = strconv.Atoi(values["exitcode"])
+	report.Signal, _ = strconv.Atoi(values["exitsig"])
+	report.TimeSec, _ = strconv.ParseFloat(values["time"], 64)
+	report.MemoryKB, _ = strconv.Atoi(values["cg-mem"])
+	return report
 }
