@@ -9,7 +9,9 @@ type Language struct {
 	Source string
 	// Compile is run inside the sandbox; empty when there is nothing to build.
 	Compile []string
-	Run     []string
+	// GraderCompile builds the submission together with grader.cpp; empty when graders are not supported.
+	GraderCompile []string
+	Run           []string
 	// Interpreted and JVM languages get the bonus configured in judge.json.
 	Bonus bool
 	// Threads and child processes the program may create.
@@ -33,6 +35,7 @@ func LanguageByID(id int, java JavaOptions) (Language, bool) {
 		Bonus:     true,
 		Processes: 1,
 	}
+	grader := []string{"/usr/bin/g++", "Main.cc", "grader.cpp", "-o", "Main", "-fno-asm", "-Wall", "-lm", "--static", "-std=c++17", "-DONLINE_JUDGE"}
 	switch id {
 	case 0:
 		return Language{
@@ -43,9 +46,9 @@ func LanguageByID(id int, java JavaOptions) (Language, bool) {
 			Processes: 1,
 		}, true
 	case 1:
-		return Language{Name: "C++", Source: "Main.cc", Compile: cpp, Run: []string{"./Main"}, Processes: 1}, true
+		return Language{Name: "C++", Source: "Main.cc", Compile: cpp, GraderCompile: grader, Run: []string{"./Main"}, Processes: 1}, true
 	case 16:
-		return Language{Name: "C++11", Source: "Main.cc", Compile: append(cpp, "-std=c++11"), Run: []string{"./Main"}, Processes: 1}, true
+		return Language{Name: "C++11", Source: "Main.cc", Compile: append(cpp, "-std=c++11"), GraderCompile: grader, Run: []string{"./Main"}, Processes: 1}, true
 	case 3:
 		return Language{
 			Name:    "Java",

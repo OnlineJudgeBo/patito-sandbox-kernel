@@ -273,3 +273,72 @@ func TestCustomRunShowsTheOutputAndIsNotASubmissionVerdict(t *testing.T) {
 		t.Fatalf("an expected output is compared: %+v", result)
 	}
 }
+
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func TestSpecialJudgeDecidesInsteadOfComparing(t *testing.T) {
+	spj := filepath.Join(t.TempDir(), "spj")
+	os.WriteFile(spj, []byte("checker"), 0755)
+	accepts := true
+	sandbox := &fakeSandbox{t: t}
+	sandbox.run = func(box string, request abstractions.RunRequest) abstractions.RunReport {
+		if request.Args[0] != "./spj" {
+			return echoInput(box, request)
+		}
+		for _, name := range []string{"spj", "data.in", "answer.out", "user.out"} {
+			if !exists(filepath.Join(box, name)) {
+				t.Fatalf("the special judge needs %s in its box", name)
+			}
+		}
+		if accepts {
+			return abstractions.RunReport{}
+		}
+		return abstractions.RunReport{Status: "RE", ExitCode: 1}
+	}
+	submission := cpp()
+	submission.SpecialJudge = true
+	// The answer file differs from the output: only the special judge can accept it.
+	tests := writeTests(t, [2]string{"1\n", "another valid answer\n"})
+
+	if result := judge(sandbox).Evaluate(0, submission, tests); result.Verdict != domain.OJ_RE {
+		t.Fatalf("a special judge problem without spj cannot be judged: %+v", result)
+	}
+	submission.Files.SpecialJudge = spj
+	if result := judge(sandbox).Evaluate(0, submission, tests); result.Verdict != domain.OJ_AC {
+		t.Fatalf("expected accepted: %+v", result)
+	}
+	accepts = false
+	if result := judge(sandbox).Evaluate(0, submission, tests); result.Verdict != domain.OJ_WA || result.RuntimeOutput != "" {
+		t.Fatalf("expected wrong answer without a difference report: %+v", result)
+	}
+}
+
+func TestGraderIsCompiledWithTheSubmissionAndHiddenFromIt(t *testing.T) {
+	dir := t.TempDir()
+	grader, header := filepath.Join(dir, "grader.cpp"), filepath.Join(dir, "task.h")
+	os.WriteFile(grader, []byte("int main(){}"), 0644)
+	os.WriteFile(header, []byte("int solve();"), 0644)
+	sandbox := &fakeSandbox{t: t}
+	sandbox.run = func(box string, request abstractions.RunRequest) abstractions.RunReport {
+		if isCompile(request) != exists(filepath.Join(box, "grader.cpp")) {
+			t.Fatalf("grader.cpp must be in the box only while compiling (compile=%v)", isCompile(request))
+		}
+		return echoInput(box, request)
+	}
+	submission := cpp()
+	submission.Files = domain.ProblemFiles{Grader: grader, Headers: []string{header}}
+	tests := writeTests(t, [2]string{"1\n", "1\n"})
+
+	result := judge(sandbox).Evaluate(0, submission, tests)
+
+	if result.Verdict != domain.OJ_AC || !strings.Contains(strings.Join(sandbox.requests[0].Args, " "), "Main.cc grader.cpp") {
+		t.Fatalf("unexpected grader build: %+v (%v)", result, sandbox.requests[0].Args)
+	}
+	submission.LanguageID = 3
+	if result := judge(sandbox).Evaluate(0, submission, tests); result.Verdict != domain.OJ_CE {
+		t.Fatalf("graders are C++ only: %+v", result)
+	}
+}

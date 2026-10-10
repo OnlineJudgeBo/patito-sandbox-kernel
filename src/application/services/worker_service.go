@@ -100,6 +100,7 @@ func (w *Worker) judge(id int, box int) {
 		}
 	} else {
 		tests, err = w.Tests.GetTestCases(submission.ProblemID)
+		submission.Files = w.Tests.Files(submission.ProblemID)
 	}
 	if err != nil {
 		result = failure("No se pudieron leer los casos de prueba: " + err.Error())

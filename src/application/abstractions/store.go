@@ -23,6 +23,8 @@ type Store interface {
 // TestCaseProvider lists the tests of a problem.
 type TestCaseProvider interface {
 	GetTestCases(problemID int) ([]domain.TestCase, error)
+	// Files reports the special judge and the grader of the problem, when it has them.
+	Files(problemID int) domain.ProblemFiles
 }
 
 // Comparator compares the expected output with the one the program produced.
