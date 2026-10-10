@@ -138,7 +138,15 @@ GRANT CREATE ON jol.* TO 'judge'@'%';
 GRANT SELECT, INSERT, UPDATE ON jol.shadow_verdict TO 'judge'@'%';
 ```
 
+## Special judge and graders
+
+- A problem with `spj` set (`1` or `Y`) is checked by `data/<problem_id>/spj`, the binary of the
+  previous judge: it runs in a box as `spj <input> <answer> <output>` and exit code 0 means accepted.
+- A problem with `data/<problem_id>/grader.cpp` is solved by writing a function. The grader and
+  the `*.h` files next to it are compiled with the submission (C++ only) and the grader source is
+  removed before the program runs.
+
 ## Not supported yet
 
-- Special judges (checkers), score groups and graders.
+- Checkers given as source (testlib) and score groups.
 - The other languages of the previous judge (Pascal, C#, PHP, ...).
