@@ -10,6 +10,7 @@ import (
 	"github.com/samuelloza/isolate-wrapper/src/application/abstractions"
 	"github.com/samuelloza/isolate-wrapper/src/infrastructure/config"
 	"github.com/samuelloza/isolate-wrapper/src/infrastructure/isolate"
+	"github.com/samuelloza/isolate-wrapper/src/infrastructure/judgedb"
 	"github.com/samuelloza/isolate-wrapper/src/infrastructure/testcaseprovider"
 )
 
@@ -77,5 +78,14 @@ func TestTestCasesArePairedByNameAndSorted(t *testing.T) {
 	}
 	if _, err := testcaseprovider.NewFileSystemTestCaseProvider(root).GetTestCases(404); err == nil {
 		t.Fatal("a problem without a data folder must be an error")
+	}
+}
+
+func TestCompilerOutputInLatin1IsStoredAsUTF8(t *testing.T) {
+	if got := judgedb.ToUTF8("instrucci\xf3n"); got != "instrucción" {
+		t.Fatalf("got %q", got)
+	}
+	if got := judgedb.ToUTF8("instrucción"); got != "instrucción" {
+		t.Fatalf("valid text must not change: %q", got)
 	}
 }

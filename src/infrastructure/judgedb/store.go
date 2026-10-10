@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	_ "github.com/go-sql-driver/mysql"
 
@@ -90,6 +91,18 @@ func (s *Store) SetRunning(id int) error {
 	return err
 }
 
+// ToUTF8 keeps the accents of tools that print Latin-1, like PSeInt; the database rejects other bytes.
+func ToUTF8(text string) string {
+	if utf8.ValidString(text) {
+		return text
+	}
+	runes := make([]rune, len(text))
+	for i := 0; i < len(text); i++ {
+		runes[i] = rune(text[i])
+	}
+	return string(runes)
+}
+
 // Save writes the verdict last, after its details: whoever polls the row sees a finished submission.
 func (s *Store) Save(submission domain.Submission, result domain.Result) error {
 	for table, text := range map[string]string{"compileinfo": result.CompileOutput, "runtimeinfo": result.RuntimeOutput} {
@@ -99,7 +112,7 @@ func (s *Store) Save(submission domain.Submission, result domain.Result) error {
 		if text == "" {
 			continue
 		}
-		if _, err := s.db.Exec("INSERT INTO "+table+" (solution_id, error) VALUES (?, ?)", submission.ID, text); err != nil {
+		if _, err := s.db.Exec("INSERT INTO "+table+" (solution_id, error) VALUES (?, ?)", submission.ID, ToUTF8(text)); err != nil {
 			return err
 		}
 	}

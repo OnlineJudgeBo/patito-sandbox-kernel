@@ -14,9 +14,9 @@ RUN git clone --depth 1 --branch v2.0 https://github.com/ioi/isolate.git /isolat
     && make -C /isolate install
 
 FROM ubuntu:24.04
-# Toolchains of the supported languages: C, C++, Java and Python 3.
+# Toolchains of the supported languages: C, C++, Java, Python 3, Go, JavaScript and PSeInt.
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        gcc g++ libc6-dev openjdk-17-jdk-headless python3 libcap2 \
+        gcc g++ libc6-dev openjdk-17-jdk-headless python3 golang-go nodejs libcap2 dos2unix \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=isolate /usr/local/bin/isolate /usr/local/bin/isolate
 COPY --from=isolate /usr/local/etc/isolate /usr/local/etc/isolate
@@ -24,6 +24,7 @@ COPY --from=isolate /usr/local/etc/isolate /usr/local/etc/isolate
 RUN chmod 4755 /usr/local/bin/isolate \
     && sed -i 's|^cg_root = .*|cg_root = /sys/fs/cgroup/isolate|' /usr/local/etc/isolate
 COPY --from=build /out/patito-judge /usr/local/bin/patito-judge
+COPY --chmod=755 pseint/pseint pseint/psexport /usr/bin/
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 ENV JUDGE_HOME=/home/judge

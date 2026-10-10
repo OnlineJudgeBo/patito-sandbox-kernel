@@ -27,8 +27,11 @@ Verdicts use the codes the rest of the platform already knows: 4 accepted, 5 pre
 | 1, 16 | C++ (16 adds `-std=c++11`) | g++ |
 | 3 | Java | OpenJDK 17 |
 | 6, 17, 19 | Python 3 | Python 3.12 |
+| 18 | Go | Go 1.22 |
+| 21 | JavaScript | Node.js 18 |
+| 20 | PSeInt | `pseint` and `psexport` translate to C++, then g++ |
 
-Java and Python get the extra time and memory of `OJ_JAVA_TIME_BONUS` and `OJ_JAVA_MEMORY_BONUS`.
+Java, Python and JavaScript get the extra time and memory of `OJ_JAVA_TIME_BONUS` and `OJ_JAVA_MEMORY_BONUS`.
 A submission in any other language is left pending.
 
 ## Configuration
@@ -69,4 +72,4 @@ The unit tests replace isolate with a fake sandbox, so they run anywhere.
 - Runs with a custom input from the IDE (rows with a `custom_input` entry are skipped).
 - Special judges (checkers), score groups and graders.
 - Code similarity checks.
-- PSeInt and the other languages of the previous judge.
+- The other languages of the previous judge (Pascal, C#, PHP, ...).
