@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	_ "github.com/go-sql-driver/mysql"
 
@@ -30,34 +32,38 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// Pending skips runs with a custom input (the IDE's "run" button): this judge does not handle them yet.
 func (s *Store) Pending(limit int, languages []int) ([]int, error) {
 	if len(languages) == 0 {
 		return nil, nil
 	}
+	return s.ids("SELECT solution_id FROM solution WHERE result < 2 AND language IN ("+languageList(languages)+")"+
+		" ORDER BY result ASC, solution_id ASC LIMIT ?", limit)
+}
+
+func languageList(languages []int) string {
 	ids := make([]string, len(languages))
 	for i, language := range languages {
 		ids[i] = strconv.Itoa(language)
 	}
-	rows, err := s.db.Query(
-		"SELECT s.solution_id FROM solution s"+
-			" WHERE s.result < 2 AND s.problem_id > 0 AND s.language IN ("+strings.Join(ids, ",")+")"+
-			" AND NOT EXISTS (SELECT 1 FROM custom_input c WHERE c.solution_id = s.solution_id)"+
-			" ORDER BY s.result ASC, s.solution_id ASC LIMIT ?", limit)
+	return strings.Join(ids, ",")
+}
+
+func (s *Store) ids(query string, args ...any) ([]int, error) {
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var pending []int
+	var ids []int
 	for rows.Next() {
 		var id int
 		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		pending = append(pending, id)
+		ids = append(ids, id)
 	}
-	return pending, rows.Err()
+	return ids, rows.Err()
 }
 
 // Claim is atomic: of several judges looking at the same row, only one gets it.
@@ -76,18 +82,105 @@ func (s *Store) Load(id int) (domain.Submission, error) {
 	submission := domain.Submission{ID: id}
 	var contest sql.NullInt64
 	err := s.db.QueryRow(
-		"SELECT s.problem_id, s.user_id, s.language, s.contest_id, p.time_limit, p.memory_limit, c.source"+
-			" FROM solution s JOIN problem p ON p.problem_id = s.problem_id"+
+		// A run without a problem gets the limits the previous judge gave it.
+		"SELECT s.problem_id, s.user_id, s.language, s.contest_id, COALESCE(p.time_limit, 5), COALESCE(p.memory_limit, 128), c.source,"+
+			" EXISTS (SELECT 1 FROM custom_input i WHERE i.solution_id = s.solution_id)"+
+			" FROM solution s LEFT JOIN problem p ON p.problem_id = s.problem_id"+
 			" JOIN source_code c ON c.solution_id = s.solution_id WHERE s.solution_id = ?", id).
 		Scan(&submission.ProblemID, &submission.UserID, &submission.LanguageID, &contest,
-			&submission.TimeLimitSec, &submission.MemoryLimitMB, &submission.Source)
+			&submission.TimeLimitSec, &submission.MemoryLimitMB, &submission.Source, &submission.Custom)
 	submission.ContestID = int(contest.Int64)
-	return submission, err
+	if err != nil {
+		return submission, err
+	}
+	if submission.ProblemID <= 0 {
+		submission.Custom = true
+	}
+	if !submission.Custom {
+		return submission, nil
+	}
+
+	rows, err := s.db.Query("SELECT input_text, expected_output FROM custom_input_case WHERE solution_id = ? ORDER BY case_number", id)
+	if err != nil {
+		return submission, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var input string
+		var expected sql.NullString
+		if err := rows.Scan(&input, &expected); err != nil {
+			return submission, err
+		}
+		item := domain.CustomCase{Input: input}
+		if expected.Valid {
+			item.Expected = &expected.String
+		}
+		submission.CustomCases = append(submission.CustomCases, item)
+	}
+	return submission, rows.Err()
+}
+
+func (s *Store) RecoverStuck(olderThan time.Duration) (int, error) {
+	result, err := s.db.Exec(
+		"UPDATE solution SET result = ? WHERE result IN (?, ?) AND judgetime < NOW() - INTERVAL ? SECOND",
+		domain.OJ_WT1, domain.OJ_CI, domain.OJ_RI, int(olderThan.Seconds()))
+	if err != nil {
+		return 0, err
+	}
+	affected, err := result.RowsAffected()
+	return int(affected), err
+}
+
+func (s *Store) AcceptedInContest(contestID int) ([]domain.Accepted, error) {
+	rows, err := s.db.Query("SELECT solution_id, user_id, problem_id FROM solution WHERE contest_id = ? AND result = ?", contestID, domain.OJ_AC)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var accepted []domain.Accepted
+	for rows.Next() {
+		var item domain.Accepted
+		if err := rows.Scan(&item.ID, &item.UserID, &item.ProblemID); err != nil {
+			return nil, err
+		}
+		accepted = append(accepted, item)
+	}
+	return accepted, rows.Err()
+}
+
+func (s *Store) ReplaceSimilarity(contestID int, found []domain.Similarity) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec("DELETE sc FROM similar_code sc JOIN solution s ON s.solution_id = sc.solution_id WHERE s.contest_id = ?", contestID); err != nil {
+		return err
+	}
+	for _, item := range found {
+		if _, err := tx.Exec("INSERT INTO similar_code (solution_id, similar_s_id, percentage) VALUES (?, ?, ?)",
+			item.SolutionID, item.SimilarID, item.Percentage); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *Store) SetRunning(id int) error {
 	_, err := s.db.Exec("UPDATE solution SET result = ? WHERE solution_id = ?", domain.OJ_RI, id)
 	return err
+}
+
+// ToUTF8 keeps the accents of tools that print Latin-1, like PSeInt; the database rejects other bytes.
+func ToUTF8(text string) string {
+	if utf8.ValidString(text) {
+		return text
+	}
+	runes := make([]rune, len(text))
+	for i := 0; i < len(text); i++ {
+		runes[i] = rune(text[i])
+	}
+	return string(runes)
 }
 
 // Save writes the verdict last, after its details: whoever polls the row sees a finished submission.
@@ -99,13 +192,17 @@ func (s *Store) Save(submission domain.Submission, result domain.Result) error {
 		if text == "" {
 			continue
 		}
-		if _, err := s.db.Exec("INSERT INTO "+table+" (solution_id, error) VALUES (?, ?)", submission.ID, text); err != nil {
+		if _, err := s.db.Exec("INSERT INTO "+table+" (solution_id, error) VALUES (?, ?)", submission.ID, ToUTF8(text)); err != nil {
 			return err
 		}
 	}
 	if _, err := s.db.Exec("UPDATE solution SET result = ?, time = ?, memory = ? WHERE solution_id = ?",
 		result.Verdict, result.TimeMs, result.MemoryKB, submission.ID); err != nil {
 		return err
+	}
+
+	if submission.Custom {
+		return nil // a run from the IDE is not a submission
 	}
 
 	// Counters shown in profiles and problem lists. A failure here does not undo the verdict.

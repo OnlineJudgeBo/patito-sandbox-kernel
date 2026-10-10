@@ -3,6 +3,9 @@ package services
 import (
 	"context"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +21,10 @@ type Worker struct {
 	Languages []int
 	Parallel  int
 	Sleep     time.Duration
+	// Archive keeps accepted contest sources for the similarity check; nil turns it off.
+	Archive abstractions.SourceArchive
+	// StuckAfter is how long a claimed submission may go without a verdict before it is queued again.
+	StuckAfter time.Duration
 }
 
 // Run returns when the context is cancelled and every submission in progress has a verdict.
@@ -29,7 +36,16 @@ func (w *Worker) Run(ctx context.Context) {
 	var running sync.WaitGroup
 	defer running.Wait()
 
+	var recovered time.Time
 	for {
+		if w.StuckAfter > 0 && time.Since(recovered) > time.Minute {
+			recovered = time.Now()
+			if count, err := w.Store.RecoverStuck(w.StuckAfter); err != nil {
+				log.Printf("could not recover stuck submissions: %v", err)
+			} else if count > 0 {
+				log.Printf("queued again %d submission(s) left without a verdict", count)
+			}
+		}
 		ids, err := w.Store.Pending(w.Parallel*2, w.Languages)
 		if err != nil {
 			log.Printf("could not read pending submissions: %v", err)
@@ -73,7 +89,18 @@ func (w *Worker) judge(id int, box int) {
 		return
 	}
 	var result domain.Result
-	tests, err := w.Tests.GetTestCases(submission.ProblemID)
+	var tests []domain.TestCase
+	if submission.Custom {
+		dir, errDir := os.MkdirTemp("", "patito-custom-")
+		if errDir == nil {
+			defer os.RemoveAll(dir)
+			tests, err = CustomTests(dir, submission.CustomCases)
+		} else {
+			err = errDir
+		}
+	} else {
+		tests, err = w.Tests.GetTestCases(submission.ProblemID)
+	}
 	if err != nil {
 		result = failure("No se pudieron leer los casos de prueba: " + err.Error())
 	} else {
@@ -85,6 +112,13 @@ func (w *Worker) judge(id int, box int) {
 	if err := w.Store.Save(submission, result); err != nil {
 		log.Printf("could not save the verdict of submission %d: %v", id, err)
 		return
+	}
+	if w.Archive != nil && result.Verdict == domain.OJ_AC && submission.ContestID > 0 {
+		if language, ok := domain.LanguageByID(submission.LanguageID, domain.JavaOptions{}); ok {
+			if err := w.Archive.Keep(submission, strings.TrimPrefix(filepath.Ext(language.Source), ".")); err != nil {
+				log.Printf("could not keep the source of submission %d: %v", id, err)
+			}
+		}
 	}
 	log.Printf("submission %d problem %d language %d: verdict %d, %d ms, %d KB, %d test(s)",
 		id, submission.ProblemID, submission.LanguageID, result.Verdict, result.TimeMs, result.MemoryKB, len(result.Tests))

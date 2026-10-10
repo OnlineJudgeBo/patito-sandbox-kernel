@@ -1,5 +1,7 @@
 package domain
 
+import "strings"
+
 // Language describes how to build and run submissions. The ids are the ones stored in
 // solution.language and must not change.
 type Language struct {
@@ -8,13 +10,13 @@ type Language struct {
 	// Compile is run inside the sandbox; empty when there is nothing to build.
 	Compile []string
 	Run     []string
-	// Interpreted and JVM languages get the bonus configured in judge.conf.
+	// Interpreted and JVM languages get the bonus configured in judge.json.
 	Bonus bool
 	// Threads and child processes the program may create.
 	Processes int
 }
 
-// JavaOptions are filled from judge.conf (OJ_JAVA_XMS, OJ_JAVA_XMX).
+// JavaOptions are filled from judge.json (javaXms, javaXmx).
 type JavaOptions struct {
 	Xms string
 	Xmx string
@@ -56,11 +58,29 @@ func LanguageByID(id int, java JavaOptions) (Language, bool) {
 		}, true
 	case 6, 17, 19:
 		return python, true
+	case 18:
+		// The build cache stays in /tmp so it is not copied back with the binary.
+		build := "GOCACHE=/tmp/go-build GOTOOLCHAIN=local CGO_ENABLED=0 /usr/bin/go build -o Main Main.go"
+		return Language{Name: "Go", Source: "Main.go", Compile: []string{"/bin/sh", "-c", build}, Run: []string{"./Main"}, Processes: 64}, true
+	case 21:
+		return Language{
+			Name:      "JavaScript",
+			Source:    "Main.js",
+			Compile:   []string{"/usr/local/bin/node", "--check", "Main.js"},
+			Run:       []string{"/usr/local/bin/node", "Main.js"},
+			Bonus:     true,
+			Processes: 64,
+		}, true
+	case 20:
+		// The pseudocode is translated to C++ and judged as a native program.
+		build := "/usr/bin/dos2unix -q Main.psc && /usr/bin/pseint Main.psc --draw Main.psd --fixwincharset --norun pseint.txt" +
+			" && /usr/bin/psexport --lang=cpp Main.psd Main.cc && " + strings.Join(cpp, " ")
+		return Language{Name: "PSeInt", Source: "Main.psc", Compile: []string{"/bin/sh", "-c", build}, Run: []string{"./Main"}, Processes: 1}, true
 	}
 	return Language{}, false
 }
 
 // SupportedLanguageIDs lists every id LanguageByID knows.
 func SupportedLanguageIDs() []int {
-	return []int{0, 1, 3, 6, 16, 17, 19}
+	return []int{0, 1, 3, 6, 16, 17, 18, 19, 20, 21}
 }

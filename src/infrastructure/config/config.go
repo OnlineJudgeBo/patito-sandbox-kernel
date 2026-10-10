@@ -1,90 +1,53 @@
 package config
 
 import (
-	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 )
 
-// Config is read from the same judge.conf the previous judge used, so this one is a drop-in replacement.
+// Config is the content of judge.json.
 type Config struct {
-	DBHost     string
-	DBPort     int
-	DBUser     string
-	DBPassword string
-	DBName     string
+	DBHost     string `json:"dbHost"`
+	DBPort     int    `json:"dbPort"`
+	DBUser     string `json:"dbUser"`
+	DBPassword string `json:"dbPassword"`
+	DBName     string `json:"dbName"`
 	// Submissions judged at the same time, and seconds between two looks at the queue.
-	Parallel     int
-	SleepSeconds int
+	Parallel     int `json:"parallel"`
+	SleepSeconds int `json:"sleepSeconds"`
 	// Language ids this judge may take; empty means every language it supports.
-	Languages     []int
-	JavaXms       string
-	JavaXmx       string
-	BonusTimeSec  int
-	BonusMemoryMB int
+	Languages     []int  `json:"languages"`
+	JavaXms       string `json:"javaXms"`
+	JavaXmx       string `json:"javaXmx"`
+	BonusTimeSec  int    `json:"bonusTimeSeconds"`
+	BonusMemoryMB int    `json:"bonusMemoryMB"`
+	// Similarity keeps accepted contest sources and serves the similarity requests of the admin.
+	Similarity bool `json:"similarity"`
+	// StuckMinutes queues again a submission claimed this long ago that never got a verdict.
+	StuckMinutes int `json:"stuckMinutes"`
+	// Shadow judges again what is already judged and writes to shadow_verdict only.
+	Shadow bool `json:"shadow"`
 }
 
-// Load parses "KEY=value" lines. Unknown keys are ignored: judge.conf has settings of the previous judge.
+// Load reads judge.json. An unknown key is an error, so a misspelled setting is not silently ignored.
 func Load(path string) (Config, error) {
-	config := Config{DBPort: 3306, Parallel: 1, SleepSeconds: 5, JavaXms: "-Xms64m", JavaXmx: "-Xmx128m"}
+	config := Config{DBPort: 3306, Parallel: 1, SleepSeconds: 5, JavaXms: "-Xms64m", JavaXmx: "-Xmx128m", Similarity: true, StuckMinutes: 15}
 	file, err := os.Open(path)
 	if err != nil {
 		return config, err
 	}
 	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		key, value, found := strings.Cut(scanner.Text(), "=")
-		if !found {
-			continue
-		}
-		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
-		number, _ := strconv.Atoi(value)
-		switch key {
-		case "OJ_HOST_NAME":
-			config.DBHost = value
-		case "OJ_PORT_NUMBER":
-			config.DBPort = number
-		case "OJ_USER_NAME":
-			config.DBUser = value
-		case "OJ_PASSWORD":
-			config.DBPassword = value
-		case "OJ_DB_NAME":
-			config.DBName = value
-		case "OJ_RUNNING":
-			config.Parallel = number
-		case "OJ_SLEEP_TIME":
-			config.SleepSeconds = number
-		case "OJ_JAVA_TIME_BONUS":
-			config.BonusTimeSec = number
-		case "OJ_JAVA_MEMORY_BONUS":
-			config.BonusMemoryMB = number
-		case "OJ_JAVA_XMS":
-			config.JavaXms = value
-		case "OJ_JAVA_XMX":
-			config.JavaXmx = value
-		case "OJ_LANG_SET":
-			for _, item := range strings.Split(value, ",") {
-				if id, err := strconv.Atoi(strings.TrimSpace(item)); err == nil {
-					config.Languages = append(config.Languages, id)
-				}
-			}
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return config, err
+	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&config); err != nil {
+		return config, fmt.Errorf("%s: %w", path, err)
 	}
 	if config.DBHost == "" || config.DBUser == "" || config.DBName == "" {
-		return config, fmt.Errorf("%s must define OJ_HOST_NAME, OJ_USER_NAME and OJ_DB_NAME", path)
+		return config, fmt.Errorf("%s must define dbHost, dbUser and dbName", path)
 	}
-	if config.Parallel < 1 {
-		config.Parallel = 1
-	}
-	if config.SleepSeconds < 1 {
-		config.SleepSeconds = 1
-	}
+	config.Parallel = max(config.Parallel, 1)
+	config.SleepSeconds = max(config.SleepSeconds, 1)
 	return config, nil
 }
