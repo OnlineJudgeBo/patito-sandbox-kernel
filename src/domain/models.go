@@ -11,11 +11,43 @@ type Submission struct {
 	// Limits of the problem, before the language bonus.
 	TimeLimitSec  int
 	MemoryLimitMB int
+	// Custom marks a run from the IDE: it uses CustomCases instead of the tests of the problem,
+	// reports the program output and does not count as a submission.
+	Custom      bool
+	CustomCases []CustomCase
+}
+
+// CustomCase is one input typed in the IDE. Expected is nil when the output is only shown, not compared.
+type CustomCase struct {
+	Input    string
+	Expected *string
+}
+
+// Accepted is an accepted contest solution, as the similarity check sees it.
+type Accepted struct {
+	ID        int
+	UserID    string
+	ProblemID int
+}
+
+// Match is one pair of source files a similarity tool compared; Score goes from 0 to 1.
+type Match struct {
+	A     string
+	B     string
+	Score float64
+}
+
+// Similarity is the closest solution of another user, kept when it is similar enough.
+type Similarity struct {
+	SolutionID int
+	SimilarID  int
+	Percentage int
 }
 
 // TestCase points to the input and expected output files of one test.
 type TestCase struct {
-	Name   string
-	Input  string
+	Name  string
+	Input string
+	// Output is empty when there is no answer to compare with (custom runs).
 	Output string
 }

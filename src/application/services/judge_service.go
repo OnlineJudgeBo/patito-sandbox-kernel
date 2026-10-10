@@ -68,8 +68,9 @@ func (j *JudgeService) Evaluate(boxID int, submission domain.Submission, tests [
 
 	timeSec, memoryKB := j.limits(submission, language)
 	result := domain.Result{Verdict: domain.OJ_AC}
+	output := ""
 	for _, test := range tests {
-		outcome, detail := j.runTest(boxID, language, artifacts, test, timeSec, memoryKB)
+		outcome, detail := j.runTest(boxID, language, artifacts, test, timeSec, memoryKB, submission.Custom)
 		result.Tests = append(result.Tests, outcome)
 		result.TimeMs = max(result.TimeMs, outcome.TimeMs)
 		result.MemoryKB = max(result.MemoryKB, outcome.MemoryKB)
@@ -78,6 +79,11 @@ func (j *JudgeService) Evaluate(boxID int, submission domain.Submission, tests [
 			result.RuntimeOutput = detail
 			break
 		}
+		output = detail
+	}
+	if submission.Custom && result.Verdict == domain.OJ_AC {
+		// The IDE shows what the program printed for the last input.
+		result.Verdict, result.RuntimeOutput = domain.OJ_TR, output
 	}
 	return result
 }
@@ -134,7 +140,7 @@ func (j *JudgeService) compile(boxID int, language domain.Language, artifacts st
 	return domain.Result{}, true
 }
 
-func (j *JudgeService) runTest(boxID int, language domain.Language, artifacts string, test domain.TestCase, timeSec float64, memoryKB int) (domain.TestResult, string) {
+func (j *JudgeService) runTest(boxID int, language domain.Language, artifacts string, test domain.TestCase, timeSec float64, memoryKB int, keepOutput bool) (domain.TestResult, string) {
 	outcome := domain.TestResult{Name: test.Name, Verdict: domain.OJ_RE}
 	box, err := j.Sandbox.Init(boxID)
 	if err != nil {
@@ -183,19 +189,48 @@ func (j *JudgeService) runTest(boxID int, language domain.Language, artifacts st
 	}
 
 	userOutput := filepath.Join(box, "user.out")
-	if tooLong(test.Output, userOutput) {
-		outcome.Verdict = domain.OJ_OL
-		return outcome, ""
+	outcome.Verdict = domain.OJ_AC
+	if test.Output != "" {
+		if tooLong(test.Output, userOutput) {
+			outcome.Verdict = domain.OJ_OL
+			return outcome, ""
+		}
+		verdict, err := j.Comparator.Compare(test.Output, userOutput)
+		if err != nil {
+			outcome.Verdict = domain.OJ_RE
+			return outcome, "No se pudo comparar la salida: " + err.Error()
+		}
+		outcome.Verdict = verdict
 	}
-	verdict, err := j.Comparator.Compare(test.Output, userOutput)
-	if err != nil {
-		return outcome, "No se pudo comparar la salida: " + err.Error()
-	}
-	outcome.Verdict = verdict
-	if verdict != domain.OJ_AC {
+	switch {
+	case outcome.Verdict != domain.OJ_AC:
 		return outcome, differenceReport(test, userOutput)
+	case keepOutput:
+		return outcome, readLimited(userOutput)
 	}
 	return outcome, ""
+}
+
+// CustomTests writes the inputs of a custom run as test files. A run without inputs gets an empty one.
+func CustomTests(dir string, cases []domain.CustomCase) ([]domain.TestCase, error) {
+	if len(cases) == 0 {
+		cases = []domain.CustomCase{{}}
+	}
+	var tests []domain.TestCase
+	for index, item := range cases {
+		test := domain.TestCase{Name: fmt.Sprint(index + 1), Input: filepath.Join(dir, fmt.Sprintf("%d.in", index+1))}
+		if err := os.WriteFile(test.Input, []byte(item.Input), 0644); err != nil {
+			return nil, err
+		}
+		if item.Expected != nil {
+			test.Output = filepath.Join(dir, fmt.Sprintf("%d.out", index+1))
+			if err := os.WriteFile(test.Output, []byte(*item.Expected), 0644); err != nil {
+				return nil, err
+			}
+		}
+		tests = append(tests, test)
+	}
+	return tests, nil
 }
 
 // differenceReport shows the failed test like the previous judge did: input, answer and output, each cut short.

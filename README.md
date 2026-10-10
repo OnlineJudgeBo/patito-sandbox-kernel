@@ -28,7 +28,7 @@ Verdicts use the codes the rest of the platform already knows: 4 accepted, 5 pre
 | 3 | Java | OpenJDK 17 |
 | 6, 17, 19 | Python 3 | Python 3.12 |
 | 18 | Go | Go 1.22 |
-| 21 | JavaScript | Node.js 18 |
+| 21 | JavaScript | Node.js 22 |
 | 20 | PSeInt | `pseint` and `psexport` translate to C++, then g++ |
 
 Java, Python and JavaScript get the extra time and memory of `bonusTimeSeconds` and `bonusMemoryMB`.
@@ -51,7 +51,10 @@ A submission in any other language is left pending.
   "javaXms": "-Xms64m",
   "javaXmx": "-Xmx128m",
   "bonusTimeSeconds": 2,
-  "bonusMemoryMB": 512
+  "bonusMemoryMB": 512,
+  "similarity": true,
+  "stuckMinutes": 15,
+  "shadow": false
 }
 ```
 
@@ -63,6 +66,9 @@ A submission in any other language is left pending.
 | `languages` | language ids this judge may take | every supported one |
 | `javaXms`, `javaXmx` | JVM heap flags | `-Xms64m`, `-Xmx128m` |
 | `bonusTimeSeconds`, `bonusMemoryMB` | extra allowance for Java, Python and JavaScript | 0 |
+| `similarity` | keep accepted contest sources and serve similarity requests | true |
+| `stuckMinutes` | queue again a submission claimed this long ago without a verdict; 0 turns it off | 15 |
+| `shadow` | compare with the previous judge instead of judging (see below) | false |
 
 Tests are read from `$JUDGE_HOME/data/<problem_id>/` (default `/home/judge`): every `<name>.in`
 with its `<name>.out`, in name order.
@@ -85,9 +91,54 @@ docker run --rm -v "$PWD":/src -w /src golang:1.24 go test ./...
 
 The unit tests replace isolate with a fake sandbox, so they run anywhere.
 
+## Runs from the IDE
+
+A submission with a row in `custom_input` (or without a problem) is a run, not a submission: it
+uses the inputs of `custom_input_case`, ends with result 13 and the program output in
+`runtimeinfo`, and does not change any counter. An input with an expected output is compared.
+
+## Similarity check
+
+Accepted contest sources are kept in `data/contests/<contest>/problem/<problem>/<solution>.<ext>`.
+When the admin API leaves `data/contests/<contest>/similarity.request`, the judge compares them
+with [Dolos](https://dolos.ugent.be), deletes the previous rows of that contest in `similar_code`
+and saves, for every solution, its closest match from another user when it is 70% similar or more.
+
+## Before going to production
+
+Check that the host can run the sandbox (cgroup v2 and privileged containers):
+
+```sh
+docker run --rm --privileged ghcr.io/onlinejudgebo/patito-sandbox-kernel:develop --check
+```
+
+Compare with the judge in use. With `"shadow": true` nothing is judged for real: submissions that
+already have a verdict are judged again, newest first, and both verdicts go to `shadow_verdict`.
+
+```sql
+SELECT legacy_result, result, COUNT(*) FROM shadow_verdict
+WHERE result <> legacy_result GROUP BY legacy_result, result;
+```
+
+Give the judge its own database user:
+
+```sql
+CREATE USER 'judge'@'%' IDENTIFIED BY '...';
+GRANT SELECT, UPDATE ON jol.solution TO 'judge'@'%';
+GRANT SELECT, UPDATE ON jol.problem TO 'judge'@'%';
+GRANT SELECT, UPDATE ON jol.user_activity TO 'judge'@'%';
+GRANT SELECT ON jol.source_code TO 'judge'@'%';
+GRANT SELECT ON jol.custom_input TO 'judge'@'%';
+GRANT SELECT ON jol.custom_input_case TO 'judge'@'%';
+GRANT SELECT, INSERT, DELETE ON jol.compileinfo TO 'judge'@'%';
+GRANT SELECT, INSERT, DELETE ON jol.runtimeinfo TO 'judge'@'%';
+GRANT SELECT, INSERT, DELETE ON jol.similar_code TO 'judge'@'%';
+-- shadow mode only
+GRANT CREATE ON jol.* TO 'judge'@'%';
+GRANT SELECT, INSERT, UPDATE ON jol.shadow_verdict TO 'judge'@'%';
+```
+
 ## Not supported yet
 
-- Runs with a custom input from the IDE (rows with a `custom_input` entry are skipped).
 - Special judges (checkers), score groups and graders.
-- Code similarity checks.
 - The other languages of the previous judge (Pascal, C#, PHP, ...).

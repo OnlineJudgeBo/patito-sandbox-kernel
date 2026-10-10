@@ -66,8 +66,8 @@ func LanguageByID(id int, java JavaOptions) (Language, bool) {
 		return Language{
 			Name:      "JavaScript",
 			Source:    "Main.js",
-			Compile:   []string{"/usr/bin/node", "--check", "Main.js"},
-			Run:       []string{"/usr/bin/node", "Main.js"},
+			Compile:   []string{"/usr/local/bin/node", "--check", "Main.js"},
+			Run:       []string{"/usr/local/bin/node", "Main.js"},
 			Bonus:     true,
 			Processes: 64,
 		}, true

@@ -13,11 +13,17 @@ RUN git clone --depth 1 --branch v2.0 https://github.com/ioi/isolate.git /isolat
     && make -C /isolate isolate \
     && make -C /isolate install
 
+# Node runs the JavaScript submissions and Dolos, the similarity tool.
+FROM node:22-bookworm AS node
+RUN npm install -g @dodona/dolos && dolos --version
+
 FROM ubuntu:24.04
 # Toolchains of the supported languages: C, C++, Java, Python 3, Go, JavaScript and PSeInt.
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        gcc g++ libc6-dev openjdk-17-jdk-headless python3 golang-go nodejs libcap2 dos2unix \
+        gcc g++ libc6-dev openjdk-17-jdk-headless python3 golang-go libcap2 dos2unix \
     && rm -rf /var/lib/apt/lists/*
+COPY --from=node /usr/local/bin /usr/local/bin
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=isolate /usr/local/bin/isolate /usr/local/bin/isolate
 COPY --from=isolate /usr/local/etc/isolate /usr/local/etc/isolate
 # Without systemd there is no cgroup keeper: the entrypoint creates this group itself.

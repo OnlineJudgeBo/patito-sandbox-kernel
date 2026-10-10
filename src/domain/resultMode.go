@@ -14,6 +14,7 @@ const (
 	OJ_OL  = 9  // output limit exceeded
 	OJ_RE  = 10 // runtime error
 	OJ_CE  = 11 // compilation error
+	OJ_TR  = 13 // run with a custom input finished
 )
 
 // TestResult is the outcome of one test case.

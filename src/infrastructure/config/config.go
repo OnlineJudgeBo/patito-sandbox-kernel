@@ -22,11 +22,17 @@ type Config struct {
 	JavaXmx       string `json:"javaXmx"`
 	BonusTimeSec  int    `json:"bonusTimeSeconds"`
 	BonusMemoryMB int    `json:"bonusMemoryMB"`
+	// Similarity keeps accepted contest sources and serves the similarity requests of the admin.
+	Similarity bool `json:"similarity"`
+	// StuckMinutes queues again a submission claimed this long ago that never got a verdict.
+	StuckMinutes int `json:"stuckMinutes"`
+	// Shadow judges again what is already judged and writes to shadow_verdict only.
+	Shadow bool `json:"shadow"`
 }
 
 // Load reads judge.json. An unknown key is an error, so a misspelled setting is not silently ignored.
 func Load(path string) (Config, error) {
-	config := Config{DBPort: 3306, Parallel: 1, SleepSeconds: 5, JavaXms: "-Xms64m", JavaXmx: "-Xmx128m"}
+	config := Config{DBPort: 3306, Parallel: 1, SleepSeconds: 5, JavaXms: "-Xms64m", JavaXmx: "-Xmx128m", Similarity: true, StuckMinutes: 15}
 	file, err := os.Open(path)
 	if err != nil {
 		return config, err

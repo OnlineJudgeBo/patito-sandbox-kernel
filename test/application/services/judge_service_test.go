@@ -248,3 +248,28 @@ func TestSubmissionsThatCannotBeJudgedStillGetAVerdict(t *testing.T) {
 		t.Fatalf("nothing should have run, got %d runs", len(sandbox.requests))
 	}
 }
+
+func TestCustomRunShowsTheOutputAndIsNotASubmissionVerdict(t *testing.T) {
+	sandbox := &fakeSandbox{t: t, run: echoInput}
+	submission := cpp()
+	submission.Custom = true
+	expected, wrong := "2\n", "9\n"
+
+	run := func(cases ...domain.CustomCase) domain.Result {
+		tests, err := services.CustomTests(t.TempDir(), cases)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return judge(sandbox).Evaluate(0, submission, tests)
+	}
+
+	if result := run(domain.CustomCase{Input: "1\n"}, domain.CustomCase{Input: "2\n", Expected: &expected}); result.Verdict != domain.OJ_TR || result.RuntimeOutput != "2\n" {
+		t.Fatalf("a finished run reports the output of the last input: %+v", result)
+	}
+	if result := run(); result.Verdict != domain.OJ_TR || result.RuntimeOutput != "" {
+		t.Fatalf("a run without inputs still runs once: %+v", result)
+	}
+	if result := run(domain.CustomCase{Input: "2\n", Expected: &wrong}); result.Verdict != domain.OJ_WA || !strings.Contains(result.RuntimeOutput, "Respuesta Correcta:\n9") {
+		t.Fatalf("an expected output is compared: %+v", result)
+	}
+}
