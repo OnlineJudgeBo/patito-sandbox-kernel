@@ -29,7 +29,7 @@ func env(name string, fallback string) string {
 
 func main() {
 	home := env("JUDGE_HOME", "/home/judge")
-	settings, err := config.Load(env("CONF", filepath.Join(home, "etc", "judge.conf")))
+	settings, err := config.Load(env("CONF", filepath.Join(home, "etc", "judge.json")))
 	if err != nil {
 		log.Fatalf("configuration: %v", err)
 	}

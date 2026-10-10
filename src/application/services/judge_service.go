@@ -23,7 +23,7 @@ const (
 	maxMemoryMB = 1024
 )
 
-// JudgeOptions come from judge.conf.
+// JudgeOptions come from judge.json.
 type JudgeOptions struct {
 	Java domain.JavaOptions
 	// Extra time (seconds) and memory (MB) for JVM and interpreted languages.

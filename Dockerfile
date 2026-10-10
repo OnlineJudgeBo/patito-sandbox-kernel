@@ -28,6 +28,6 @@ COPY --chmod=755 pseint/pseint pseint/psexport /usr/bin/
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 ENV JUDGE_HOME=/home/judge
-ENV CONF=/home/judge/etc/judge.conf
+ENV CONF=/home/judge/etc/judge.json
 ENV LANG=C.UTF-8
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

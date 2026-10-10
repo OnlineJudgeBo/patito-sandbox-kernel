@@ -10,13 +10,13 @@ type Language struct {
 	// Compile is run inside the sandbox; empty when there is nothing to build.
 	Compile []string
 	Run     []string
-	// Interpreted and JVM languages get the bonus configured in judge.conf.
+	// Interpreted and JVM languages get the bonus configured in judge.json.
 	Bonus bool
 	// Threads and child processes the program may create.
 	Processes int
 }
 
-// JavaOptions are filled from judge.conf (OJ_JAVA_XMS, OJ_JAVA_XMX).
+// JavaOptions are filled from judge.json (javaXms, javaXmx).
 type JavaOptions struct {
 	Xms string
 	Xmx string
