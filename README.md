@@ -100,9 +100,12 @@ uses the inputs of `custom_input_case`, ends with result 13 and the program outp
 ## Similarity check
 
 Accepted contest sources are kept in `data/contests/<contest>/problem/<problem>/<solution>.<ext>`.
-When the admin API leaves `data/contests/<contest>/similarity.request`, the judge compares them
-with [Dolos](https://dolos.ugent.be), deletes the previous rows of that contest in `similar_code`
-and saves, for every solution, its closest match from another user when it is 70% similar or more.
+Every accepted contest submission is compared right after its verdict is saved, with
+[Dolos](https://dolos.ugent.be), against the accepted solutions other users sent to the same
+problem in the same language. Its closest match goes to `similar_code` when it is 70% similar or more.
+
+When the admin API leaves `data/contests/<contest>/similarity.request`, the whole contest is
+checked again: the previous rows of that contest are deleted and every solution gets its closest match.
 
 ## Before going to production
 
@@ -138,7 +141,15 @@ GRANT CREATE ON jol.* TO 'judge'@'%';
 GRANT SELECT, INSERT, UPDATE ON jol.shadow_verdict TO 'judge'@'%';
 ```
 
+## Special judge and graders
+
+- A problem with `spj` set (`1` or `Y`) is checked by `data/<problem_id>/spj`, the binary of the
+  previous judge: it runs in a box as `spj <input> <answer> <output>` and exit code 0 means accepted.
+- A problem with `data/<problem_id>/grader.cpp` is solved by writing a function. The grader and
+  the `*.h` files next to it are compiled with the submission (C++ only) and the grader source is
+  removed before the program runs.
+
 ## Not supported yet
 
-- Special judges (checkers), score groups and graders.
+- Checkers given as source (testlib) and score groups.
 - The other languages of the previous judge (Pascal, C#, PHP, ...).

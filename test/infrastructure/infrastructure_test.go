@@ -8,7 +8,9 @@ import (
 	"testing"
 
 	"github.com/samuelloza/isolate-wrapper/src/application/abstractions"
+	"github.com/samuelloza/isolate-wrapper/src/domain"
 	"github.com/samuelloza/isolate-wrapper/src/infrastructure/config"
+	"github.com/samuelloza/isolate-wrapper/src/infrastructure/dolos"
 	"github.com/samuelloza/isolate-wrapper/src/infrastructure/isolate"
 	"github.com/samuelloza/isolate-wrapper/src/infrastructure/judgedb"
 	"github.com/samuelloza/isolate-wrapper/src/infrastructure/testcaseprovider"
@@ -99,5 +101,18 @@ func TestCompilerOutputInLatin1IsStoredAsUTF8(t *testing.T) {
 	}
 	if got := judgedb.ToUTF8("instrucción"); got != "instrucción" {
 		t.Fatalf("valid text must not change: %q", got)
+	}
+}
+
+func TestDolosPairsAreReadFromTheCSVReport(t *testing.T) {
+	report := "id,leftFileId,leftFilePath,rightFileId,rightFilePath,similarity,totalOverlap\n15,0,4.cc,1,5.cc,0.91,26\n16,0,4.cc,2,other.cc,1,26\n"
+
+	matches, err := dolos.ParsePairs(report, map[string]string{"4.cc": "/data/4.cc", "5.cc": "/data/5.cc"})
+
+	if err != nil || !reflect.DeepEqual(matches, []domain.Match{{A: "/data/4.cc", B: "/data/5.cc", Score: 0.91}}) {
+		t.Fatalf("unexpected matches: %+v (%v)", matches, err)
+	}
+	if _, err := dolos.ParsePairs("a,b\n1,2\n", nil); err == nil {
+		t.Fatal("a report without the expected columns must be an error")
 	}
 }

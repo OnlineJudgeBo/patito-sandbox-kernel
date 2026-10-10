@@ -65,3 +65,16 @@ func (p *FileSystemTestCaseProvider) GetTestCases(problemID int) ([]domain.TestC
 
 	return testCases, nil
 }
+
+func (p *FileSystemTestCaseProvider) Files(problemID int) domain.ProblemFiles {
+	dir := filepath.Join(p.BasePath, strconv.Itoa(problemID))
+	var files domain.ProblemFiles
+	if info, err := os.Stat(filepath.Join(dir, "spj")); err == nil && info.Mode().IsRegular() {
+		files.SpecialJudge = filepath.Join(dir, "spj")
+	}
+	if info, err := os.Stat(filepath.Join(dir, "grader.cpp")); err == nil && info.Mode().IsRegular() {
+		files.Grader = filepath.Join(dir, "grader.cpp")
+		files.Headers, _ = filepath.Glob(filepath.Join(dir, "*.h"))
+	}
+	return files
+}

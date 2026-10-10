@@ -23,6 +23,8 @@ type Store interface {
 // TestCaseProvider lists the tests of a problem.
 type TestCaseProvider interface {
 	GetTestCases(problemID int) ([]domain.TestCase, error)
+	// Files reports the special judge and the grader of the problem, when it has them.
+	Files(problemID int) domain.ProblemFiles
 }
 
 // Comparator compares the expected output with the one the program produced.
@@ -60,4 +62,6 @@ type SimilarityStore interface {
 	AcceptedInContest(contestID int) ([]domain.Accepted, error)
 	// ReplaceSimilarity deletes what was stored for the contest and saves the new result.
 	ReplaceSimilarity(contestID int, found []domain.Similarity) error
+	// SaveSimilarity stores the closest match of one solution.
+	SaveSimilarity(found domain.Similarity) error
 }

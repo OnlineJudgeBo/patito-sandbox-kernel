@@ -15,6 +15,12 @@ type fakeSimilarity struct {
 	matches  []domain.Match
 	compared [][]string
 	saved    []domain.Similarity
+	kept     []string
+}
+
+func (f *fakeSimilarity) SaveSimilarity(found domain.Similarity) error {
+	f.saved = append(f.saved, found)
+	return nil
 }
 
 func (f *fakeSimilarity) AcceptedInContest(int) ([]domain.Accepted, error) { return f.accepted, nil }
@@ -22,7 +28,10 @@ func (f *fakeSimilarity) ReplaceSimilarity(_ int, found []domain.Similarity) err
 	f.saved = found
 	return nil
 }
-func (f *fakeSimilarity) Keep(domain.Submission, string) error            { return nil }
+func (f *fakeSimilarity) Keep(_ domain.Submission, extension string) error {
+	f.kept = append(f.kept, extension)
+	return nil
+}
 func (f *fakeSimilarity) Requested() ([]int, error)                       { return nil, nil }
 func (f *fakeSimilarity) Finish(int) error                                { return nil }
 func (f *fakeSimilarity) Sources(int) ([]abstractions.SourceGroup, error) { return f.groups, nil }
@@ -56,5 +65,31 @@ func TestSimilarityComparesWithOtherUsersOnly(t *testing.T) {
 	}
 	if !reflect.DeepEqual(fake.compared, [][]string{{"1.cc", "2.cc", "3.cc", "4.cc"}}) {
 		t.Fatalf("unexpected files compared: %v", fake.compared)
+	}
+}
+
+func TestAnAcceptedSubmissionIsComparedWithTheOtherUsers(t *testing.T) {
+	fake := &fakeSimilarity{
+		accepted: []domain.Accepted{{ID: 1, UserID: "ana", ProblemID: 10}, {ID: 2, UserID: "ana", ProblemID: 10}, {ID: 3, UserID: "beto", ProblemID: 10}, {ID: 4, UserID: "caro", ProblemID: 10}},
+		groups: []abstractions.SourceGroup{
+			{ProblemID: 10, Files: map[int]string{9: "9.py"}},
+			{ProblemID: 10, Files: map[int]string{1: "1.cc", 2: "2.cc", 3: "3.cc", 4: "4.cc", 5: "5.cc"}},
+		},
+		matches: []domain.Match{
+			{A: "2.cc", B: "3.cc", Score: 0.8},
+			{A: "4.cc", B: "2.cc", Score: 0.93},
+			{A: "3.cc", B: "4.cc", Score: 1}, // not about this submission
+		},
+	}
+	service := &services.SimilarityService{Store: fake, Archive: fake, Tool: fake}
+
+	err := service.CheckSubmission(domain.Submission{ID: 2, UserID: "ana", ProblemID: 10, ContestID: 7, LanguageID: 16})
+
+	if err != nil || !reflect.DeepEqual(fake.saved, []domain.Similarity{{SolutionID: 2, SimilarID: 4, Percentage: 93}}) {
+		t.Fatalf("unexpected result: %+v (%v)", fake.saved, err)
+	}
+	// Her other solution (1) and the one no longer accepted (5) stay out.
+	if !reflect.DeepEqual(fake.compared, [][]string{{"2.cc", "3.cc", "4.cc"}}) || !reflect.DeepEqual(fake.kept, []string{"cc"}) {
+		t.Fatalf("unexpected files: compared %v, kept %v", fake.compared, fake.kept)
 	}
 }

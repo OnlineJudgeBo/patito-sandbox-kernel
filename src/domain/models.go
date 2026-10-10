@@ -15,6 +15,20 @@ type Submission struct {
 	// reports the program output and does not count as a submission.
 	Custom      bool
 	CustomCases []CustomCase
+	// SpecialJudge is the flag of the problem: answers are checked by a program, not compared.
+	SpecialJudge bool
+	// Files are the judge files of the problem, filled before judging.
+	Files ProblemFiles
+}
+
+// ProblemFiles are the optional files that sit next to the tests of a problem. Empty means absent.
+type ProblemFiles struct {
+	// SpecialJudge is the binary "spj": it gets the input, the answer and the output of the
+	// program as arguments and exits with 0 when the output is correct.
+	SpecialJudge string
+	// Grader owns main() and is compiled with the submission, which only writes a function.
+	Grader  string
+	Headers []string
 }
 
 // CustomCase is one input typed in the IDE. Expected is nil when the output is only shown, not compared.

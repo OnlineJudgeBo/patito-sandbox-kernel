@@ -4,8 +4,6 @@ import (
 	"context"
 	"log"
 	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -21,8 +19,8 @@ type Worker struct {
 	Languages []int
 	Parallel  int
 	Sleep     time.Duration
-	// Archive keeps accepted contest sources for the similarity check; nil turns it off.
-	Archive abstractions.SourceArchive
+	// Similarity checks every accepted contest submission; nil turns it off.
+	Similarity *SimilarityService
 	// StuckAfter is how long a claimed submission may go without a verdict before it is queued again.
 	StuckAfter time.Duration
 }
@@ -100,6 +98,7 @@ func (w *Worker) judge(id int, box int) {
 		}
 	} else {
 		tests, err = w.Tests.GetTestCases(submission.ProblemID)
+		submission.Files = w.Tests.Files(submission.ProblemID)
 	}
 	if err != nil {
 		result = failure("No se pudieron leer los casos de prueba: " + err.Error())
@@ -113,13 +112,13 @@ func (w *Worker) judge(id int, box int) {
 		log.Printf("could not save the verdict of submission %d: %v", id, err)
 		return
 	}
-	if w.Archive != nil && result.Verdict == domain.OJ_AC && submission.ContestID > 0 {
-		if language, ok := domain.LanguageByID(submission.LanguageID, domain.JavaOptions{}); ok {
-			if err := w.Archive.Keep(submission, strings.TrimPrefix(filepath.Ext(language.Source), ".")); err != nil {
-				log.Printf("could not keep the source of submission %d: %v", id, err)
-			}
-		}
-	}
 	log.Printf("submission %d problem %d language %d: verdict %d, %d ms, %d KB, %d test(s)",
 		id, submission.ProblemID, submission.LanguageID, result.Verdict, result.TimeMs, result.MemoryKB, len(result.Tests))
+
+	// The verdict is already saved: the check never delays or changes it.
+	if w.Similarity != nil && result.Verdict == domain.OJ_AC && submission.ContestID > 0 && !submission.Custom {
+		if err := w.Similarity.CheckSubmission(submission); err != nil {
+			log.Printf("similarity check of submission %d failed: %v", id, err)
+		}
+	}
 }

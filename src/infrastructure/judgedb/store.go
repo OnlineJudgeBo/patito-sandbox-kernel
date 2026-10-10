@@ -84,11 +84,13 @@ func (s *Store) Load(id int) (domain.Submission, error) {
 	err := s.db.QueryRow(
 		// A run without a problem gets the limits the previous judge gave it.
 		"SELECT s.problem_id, s.user_id, s.language, s.contest_id, COALESCE(p.time_limit, 5), COALESCE(p.memory_limit, 128), c.source,"+
+			// The admin API stores Y/N; older rows hold 1/0.
+			" COALESCE(p.spj IN ('1', 'Y'), 0),"+
 			" EXISTS (SELECT 1 FROM custom_input i WHERE i.solution_id = s.solution_id)"+
 			" FROM solution s LEFT JOIN problem p ON p.problem_id = s.problem_id"+
 			" JOIN source_code c ON c.solution_id = s.solution_id WHERE s.solution_id = ?", id).
 		Scan(&submission.ProblemID, &submission.UserID, &submission.LanguageID, &contest,
-			&submission.TimeLimitSec, &submission.MemoryLimitMB, &submission.Source, &submission.Custom)
+			&submission.TimeLimitSec, &submission.MemoryLimitMB, &submission.Source, &submission.SpecialJudge, &submission.Custom)
 	submission.ContestID = int(contest.Int64)
 	if err != nil {
 		return submission, err
@@ -146,6 +148,12 @@ func (s *Store) AcceptedInContest(contestID int) ([]domain.Accepted, error) {
 		accepted = append(accepted, item)
 	}
 	return accepted, rows.Err()
+}
+
+func (s *Store) SaveSimilarity(found domain.Similarity) error {
+	_, err := s.db.Exec("INSERT INTO similar_code (solution_id, similar_s_id, percentage) VALUES (?, ?, ?)"+
+		" ON DUPLICATE KEY UPDATE percentage = VALUES(percentage)", found.SolutionID, found.SimilarID, found.Percentage)
+	return err
 }
 
 func (s *Store) ReplaceSimilarity(contestID int, found []domain.Similarity) error {

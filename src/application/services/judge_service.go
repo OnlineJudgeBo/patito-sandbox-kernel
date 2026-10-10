@@ -15,6 +15,7 @@ const (
 	compileTimeSec  = 30
 	compileMemoryKB = 1024 * 1024
 	compileOutputKB = 128 * 1024
+	checkerTimeSec  = 10
 	// A program may write this much before it is cut; the real output limit is checked against the answer.
 	runOutputKB    = 64 * 1024
 	maxReportBytes = 8 * 1024
@@ -60,17 +61,37 @@ func (j *JudgeService) Evaluate(boxID int, submission domain.Submission, tests [
 		return failure("No se pudo escribir el código fuente: " + err.Error())
 	}
 
+	checker := ""
+	if submission.SpecialJudge && !submission.Custom {
+		if checker = submission.Files.SpecialJudge; checker == "" {
+			return failure("El problema usa juez especial pero no tiene el programa spj.")
+		}
+	}
+	if grader := submission.Files.Grader; grader != "" {
+		if len(language.GraderCompile) == 0 {
+			return domain.Result{Verdict: domain.OJ_CE, CompileOutput: "Este problema se resuelve implementando una función y solo admite C++."}
+		}
+		language.Compile = language.GraderCompile
+		for _, file := range append([]string{grader}, submission.Files.Headers...) {
+			if err := copyFile(file, filepath.Join(artifacts, filepath.Base(file))); err != nil {
+				return failure("No se pudo preparar el grader: " + err.Error())
+			}
+		}
+	}
+
 	if len(language.Compile) > 0 {
 		if result, ok := j.compile(boxID, language, artifacts); !ok {
 			return result
 		}
 	}
+	// The grader source is secret: the running submission must not find it in its box.
+	os.Remove(filepath.Join(artifacts, "grader.cpp"))
 
 	timeSec, memoryKB := j.limits(submission, language)
 	result := domain.Result{Verdict: domain.OJ_AC}
 	output := ""
 	for _, test := range tests {
-		outcome, detail := j.runTest(boxID, language, artifacts, test, timeSec, memoryKB, submission.Custom)
+		outcome, detail := j.runTest(boxID, language, artifacts, test, timeSec, memoryKB, submission.Custom, checker)
 		result.Tests = append(result.Tests, outcome)
 		result.TimeMs = max(result.TimeMs, outcome.TimeMs)
 		result.MemoryKB = max(result.MemoryKB, outcome.MemoryKB)
@@ -140,7 +161,7 @@ func (j *JudgeService) compile(boxID int, language domain.Language, artifacts st
 	return domain.Result{}, true
 }
 
-func (j *JudgeService) runTest(boxID int, language domain.Language, artifacts string, test domain.TestCase, timeSec float64, memoryKB int, keepOutput bool) (domain.TestResult, string) {
+func (j *JudgeService) runTest(boxID int, language domain.Language, artifacts string, test domain.TestCase, timeSec float64, memoryKB int, keepOutput bool, checker string) (domain.TestResult, string) {
 	outcome := domain.TestResult{Name: test.Name, Verdict: domain.OJ_RE}
 	box, err := j.Sandbox.Init(boxID)
 	if err != nil {
@@ -190,6 +211,16 @@ func (j *JudgeService) runTest(boxID int, language domain.Language, artifacts st
 
 	userOutput := filepath.Join(box, "user.out")
 	outcome.Verdict = domain.OJ_AC
+	if checker != "" {
+		// Like the previous judge: no output limit and no difference report, the answer may not be unique.
+		verdict, err := j.specialJudge(boxID, checker, test, userOutput)
+		if err != nil {
+			outcome.Verdict = domain.OJ_RE
+			return outcome, "No se pudo ejecutar el juez especial: " + err.Error()
+		}
+		outcome.Verdict = verdict
+		return outcome, ""
+	}
 	if test.Output != "" {
 		if tooLong(test.Output, userOutput) {
 			outcome.Verdict = domain.OJ_OL
@@ -209,6 +240,48 @@ func (j *JudgeService) runTest(boxID int, language domain.Language, artifacts st
 		return outcome, readLimited(userOutput)
 	}
 	return outcome, ""
+}
+
+// specialJudge runs the checker of the problem in a box of its own: "spj <input> <answer> <output>",
+// where exit code 0 means accepted and anything else a wrong answer.
+func (j *JudgeService) specialJudge(boxID int, checker string, test domain.TestCase, userOutput string) (int, error) {
+	held, err := os.CreateTemp("", "patito-output-")
+	if err != nil {
+		return 0, err
+	}
+	held.Close()
+	defer os.Remove(held.Name())
+	if err := copyFile(userOutput, held.Name()); err != nil {
+		return 0, err
+	}
+	// The box of the program cannot be reused: its accounting would add up.
+	j.Sandbox.Cleanup(boxID)
+	box, err := j.Sandbox.Init(boxID)
+	if err != nil {
+		return 0, err
+	}
+	for name, source := range map[string]string{"spj": checker, "data.in": test.Input, "answer.out": test.Output, "user.out": held.Name()} {
+		if err := copyFile(source, filepath.Join(box, name)); err != nil {
+			return 0, err
+		}
+	}
+	report, err := j.Sandbox.Run(boxID, abstractions.RunRequest{
+		Args:      []string{"./spj", "data.in", "answer.out", "user.out"},
+		Stdout:    "spj.txt",
+		TimeSec:   checkerTimeSec,
+		MemoryKB:  compileMemoryKB,
+		OutputKB:  runOutputKB,
+		Processes: 1,
+	})
+	switch {
+	case err != nil:
+		return 0, err
+	case report.Status == "XX":
+		return 0, fmt.Errorf("%s", report.Message)
+	case report.Status == "":
+		return domain.OJ_AC, nil
+	}
+	return domain.OJ_WA, nil
 }
 
 // CustomTests writes the inputs of a custom run as test files. A run without inputs gets an empty one.

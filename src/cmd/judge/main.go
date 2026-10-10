@@ -92,8 +92,8 @@ func main() {
 		worker.Store, mode = shadow, "shadow"
 	case settings.Similarity:
 		archive := &sourcearchive.Archive{Root: filepath.Join(home, "data", "contests")}
-		worker.Archive = archive
 		similarity := &services.SimilarityService{Store: database, Archive: archive, Tool: &dolos.Tool{Timeout: 10 * time.Minute}}
+		worker.Similarity = similarity
 		go similarity.Watch(ctx, 5*time.Second)
 	}
 	log.Printf("patito judge started (%s): %d parallel, languages %v, data in %s", mode, worker.Parallel, worker.Languages, filepath.Join(home, "data"))
