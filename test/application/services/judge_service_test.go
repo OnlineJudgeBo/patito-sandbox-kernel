@@ -316,30 +316,57 @@ func TestSpecialJudgeDecidesInsteadOfComparing(t *testing.T) {
 	}
 }
 
-func TestGraderIsCompiledWithTheSubmissionAndHiddenFromIt(t *testing.T) {
+func TestGraderIsBuiltWithTheSubmissionInTheLanguagesTheProblemBrings(t *testing.T) {
 	dir := t.TempDir()
-	grader, header := filepath.Join(dir, "grader.cpp"), filepath.Join(dir, "task.h")
-	os.WriteFile(grader, []byte("int main(){}"), 0644)
+	header := filepath.Join(dir, "task.h")
 	os.WriteFile(header, []byte("int solve();"), 0644)
-	sandbox := &fakeSandbox{t: t}
-	sandbox.run = func(box string, request abstractions.RunRequest) abstractions.RunReport {
-		if isCompile(request) != exists(filepath.Join(box, "grader.cpp")) {
-			t.Fatalf("grader.cpp must be in the box only while compiling (compile=%v)", isCompile(request))
-		}
-		return echoInput(box, request)
+	var graders []string
+	for _, name := range []string{"grader.cpp", "grader.java", "grader.py"} {
+		graders = append(graders, filepath.Join(dir, name))
+		os.WriteFile(graders[len(graders)-1], []byte("main"), 0644)
 	}
+	sandbox := &fakeSandbox{t: t, run: echoInput}
 	submission := cpp()
-	submission.Files = domain.ProblemFiles{Grader: grader, Headers: []string{header}}
+	submission.Files = domain.ProblemFiles{Graders: graders, Headers: []string{header}}
 	tests := writeTests(t, [2]string{"1\n", "1\n"})
-
-	result := judge(sandbox).Evaluate(0, submission, tests)
-
-	if result.Verdict != domain.OJ_AC || !strings.Contains(strings.Join(sandbox.requests[0].Args, " "), "Main.cc grader.cpp") {
-		t.Fatalf("unexpected grader build: %+v (%v)", result, sandbox.requests[0].Args)
+	// Language id, how it is built, how it runs, and whether the grader source is still there when running.
+	cases := []struct {
+		language int
+		build    string
+		run      string
+		kept     string
+	}{
+		{1, "Main.cc grader.cpp", "./Main", ""},
+		{3, "Main.java grader.java", "-Xss64m grader", ""},
+		{6, "Main.py grader.py", "python3 grader.py", "grader.py"},
 	}
-	submission.LanguageID = 3
+	for _, item := range cases {
+		sandbox.requests = nil
+		sandbox.run = func(box string, request abstractions.RunRequest) abstractions.RunReport {
+			for _, name := range []string{"grader.cpp", "grader.java", "grader.py"} {
+				if !isCompile(request) && exists(filepath.Join(box, name)) != (name == item.kept) {
+					t.Fatalf("language %d: %s in the box of the running submission", item.language, name)
+				}
+			}
+			return echoInput(box, request)
+		}
+		submission.LanguageID = item.language
+
+		result := judge(sandbox).Evaluate(0, submission, tests)
+
+		build, run := strings.Join(sandbox.requests[0].Args, " "), strings.Join(sandbox.requests[1].Args, " ")
+		if result.Verdict != domain.OJ_AC || !strings.HasSuffix(build, item.build) && !strings.Contains(build, item.build+" ") || !strings.HasSuffix(run, item.run) {
+			t.Fatalf("language %d: verdict %d, built with %q, ran %q", item.language, result.Verdict, build, run)
+		}
+	}
+
+	submission.LanguageID = 18
 	if result := judge(sandbox).Evaluate(0, submission, tests); result.Verdict != domain.OJ_CE {
-		t.Fatalf("graders are C++ only: %+v", result)
+		t.Fatalf("a language without a grader cannot solve the problem: %+v", result)
+	}
+	submission.LanguageID, submission.Files.Graders = 3, graders[:1]
+	if result := judge(sandbox).Evaluate(0, submission, tests); result.Verdict != domain.OJ_CE {
+		t.Fatalf("the problem only brings the C++ grader: %+v", result)
 	}
 }
 

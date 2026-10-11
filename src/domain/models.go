@@ -30,8 +30,10 @@ type ProblemFiles struct {
 	SpecialJudge string
 	// Checker is the source of a checker; it wins over SpecialJudge.
 	Checker Checker
-	// Grader owns main() and is compiled with the submission, which only writes a function.
-	Grader  string
+	// Graders own the entry point and are built with the submission, which only writes a
+	// function. There is one per language the problem accepts: grader.cpp, grader.java, grader.py.
+	// Headers are the *.h the C++ submission includes.
+	Graders []string
 	Headers []string
 	// Groups come from scoring.json: the problem is scored by subtasks.
 	Groups []ScoreGroup
