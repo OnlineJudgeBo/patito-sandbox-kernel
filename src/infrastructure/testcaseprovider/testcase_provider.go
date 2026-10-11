@@ -1,6 +1,7 @@
 package testcaseprovider
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -76,5 +77,49 @@ func (p *FileSystemTestCaseProvider) Files(problemID int) domain.ProblemFiles {
 		files.Grader = filepath.Join(dir, "grader.cpp")
 		files.Headers, _ = filepath.Glob(filepath.Join(dir, "*.h"))
 	}
+	if data, err := os.ReadFile(filepath.Join(dir, "scoring.json")); err == nil {
+		files.Groups = ParseGroups(data)
+	}
 	return files
+}
+
+// ParseGroups reads scoring.json:
+//
+//	{ "groups": [ { "name": "Subtarea 1", "points": 10, "type": "sum", "tests": "s1_*" },
+//	              { "points": 20, "type": "min", "tests": ["s2_*", "extra"] } ] }
+//
+// A malformed group is skipped and a file that is not JSON gives no groups, like the previous judge.
+func ParseGroups(data []byte) []domain.ScoreGroup {
+	var file struct {
+		Groups []json.RawMessage `json:"groups"`
+	}
+	if json.Unmarshal(data, &file) != nil {
+		return nil
+	}
+	var groups []domain.ScoreGroup
+	for _, raw := range file.Groups {
+		var item struct {
+			Points *float64        `json:"points"`
+			Type   string          `json:"type"`
+			Tests  json.RawMessage `json:"tests"`
+		}
+		if json.Unmarshal(raw, &item) != nil || item.Points == nil || *item.Points < 0 {
+			continue
+		}
+		var patterns []string
+		var single string
+		if json.Unmarshal(item.Tests, &single) == nil {
+			patterns = []string{single}
+		} else if json.Unmarshal(item.Tests, &patterns) != nil {
+			continue
+		}
+		if len(patterns) == 0 {
+			continue
+		}
+		if item.Type != "min" && item.Type != "mul" {
+			item.Type = "sum"
+		}
+		groups = append(groups, domain.ScoreGroup{Points: *item.Points, Type: item.Type, Patterns: patterns})
+	}
+	return groups
 }

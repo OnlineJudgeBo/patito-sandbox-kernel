@@ -35,4 +35,9 @@ type Result struct {
 	// Why the program failed, kept when the verdict is OJ_RE.
 	RuntimeOutput string
 	Tests         []TestResult
+	// Scored marks a submission judged on every test: Score is its fraction of the points,
+	// from 0 to 1, and Groups what it earned in each group of the problem.
+	Scored bool
+	Score  float64
+	Groups []GroupScore
 }

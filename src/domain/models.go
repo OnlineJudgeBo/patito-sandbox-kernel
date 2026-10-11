@@ -17,6 +17,8 @@ type Submission struct {
 	CustomCases []CustomCase
 	// SpecialJudge is the flag of the problem: answers are checked by a program, not compared.
 	SpecialJudge bool
+	// ScoreAll is set by a contest ranked by points: every test runs and the submission gets a score.
+	ScoreAll bool
 	// Files are the judge files of the problem, filled before judging.
 	Files ProblemFiles
 }
@@ -29,6 +31,8 @@ type ProblemFiles struct {
 	// Grader owns main() and is compiled with the submission, which only writes a function.
 	Grader  string
 	Headers []string
+	// Groups come from scoring.json: the problem is scored by subtasks.
+	Groups []ScoreGroup
 }
 
 // CustomCase is one input typed in the IDE. Expected is nil when the output is only shown, not compared.
