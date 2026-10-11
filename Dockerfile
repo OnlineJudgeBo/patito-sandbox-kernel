@@ -31,6 +31,8 @@ RUN chmod 4755 /usr/local/bin/isolate \
     && sed -i 's|^cg_root = .*|cg_root = /sys/fs/cgroup/isolate|' /usr/local/etc/isolate
 COPY --from=build /out/patito-judge /usr/local/bin/patito-judge
 COPY --chmod=755 pseint/pseint pseint/psexport /usr/bin/
+# For the checkers of the problems (data/<problem_id>/checker.cpp).
+COPY testlib/testlib.h /usr/include/testlib.h
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 ENV JUDGE_HOME=/home/judge

@@ -143,8 +143,22 @@ GRANT SELECT, INSERT, UPDATE ON jol.shadow_verdict TO 'judge'@'%';
 
 ## Special judge and graders
 
-- A problem with `spj` set (`1` or `Y`) is checked by `data/<problem_id>/spj`, the binary of the
-  previous judge: it runs in a box as `spj <input> <answer> <output>` and exit code 0 means accepted.
+A problem with `spj` set (`1` or `Y`) is checked by a program instead of compared. The judge
+takes the first of these it finds in `data/<problem_id>/`:
+
+| File | Called as | Result |
+| --- | --- | --- |
+| `checker.cpp` (testlib) | `checker <input> <output> <answer>` | exit code: 0 accepted, 1 wrong answer, 2 presentation error, 7 partial credit (`quitp`) |
+| `checker_cms.cpp` (CMS) | `checker <input> <answer> <output>` | prints the outcome, a fraction from 0 to 1 |
+| `spj` (binary of the previous judge) | `spj <input> <answer> <output>` | exit code 0 accepted, anything else wrong answer |
+
+- A source checker is compiled in the sandbox the first time and again when it changes; the
+  binary stays in `checker` and the compiler output in `checker.log`. The image has testlib
+  0.9.45; a `testlib.h` next to the checker is used instead.
+- A checker that does not compile, crashes or exits with another code gives a runtime error with
+  a message, never a wrong answer.
+- Partial credit is the score of the test inside its groups; the test is accepted only with 1.
+
 - A problem with `data/<problem_id>/grader.cpp` is solved by writing a function. The grader and
   the `*.h` files next to it are compiled with the submission (C++ only) and the grader source is
   removed before the program runs.
@@ -164,7 +178,8 @@ has `data/<problem_id>/scoring.json` or its contest is ranked by points (`contes
 - `tests` are globs (`*`, `?`, `[set]`) over the test name without `.in`. A test may be in several
   groups; a test in none earns nothing.
 - `type`: `sum` pays in proportion to the tests passed (default), `min` the worst test (all or
-  nothing), `mul` the product. A whitespace-only difference still earns the test.
+  nothing), `mul` the product. A whitespace-only difference still earns the test, and a checker
+  may give a fraction of it.
 - Without groups the score is the share of accepted tests.
 - The score goes to `solution.pass_rate` as a fraction from 0 to 1 and the points of each group to
   `solution_subtask`. The verdict shown is the highest code among the tests.
@@ -173,5 +188,4 @@ has `data/<problem_id>/scoring.json` or its contest is ranked by points (`contes
 
 ## Not supported yet
 
-- Checkers given as source (testlib), and with them partial credit for a single test.
 - The other languages of the previous judge (Pascal, C#, PHP, ...).

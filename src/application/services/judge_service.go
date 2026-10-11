@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/samuelloza/isolate-wrapper/src/application/abstractions"
@@ -62,10 +63,19 @@ func (j *JudgeService) Evaluate(boxID int, submission domain.Submission, tests [
 		return failure("No se pudo escribir el código fuente: " + err.Error())
 	}
 
-	checker := ""
+	var check *checker
 	if submission.SpecialJudge && !submission.Custom {
-		if checker = submission.Files.SpecialJudge; checker == "" {
-			return failure("El problema usa juez especial pero no tiene el programa spj.")
+		source := submission.Files.Checker
+		switch {
+		case source.Source != "":
+			if err := j.buildChecker(boxID, source); err != nil {
+				return failure("El checker del problema no compila; revisa checker.log en los archivos del problema.")
+			}
+			check = &checker{binary: source.Binary, testlib: !source.CMS, cms: source.CMS}
+		case submission.Files.SpecialJudge != "":
+			check = &checker{binary: submission.Files.SpecialJudge}
+		default:
+			return failure("El problema usa juez especial pero no tiene checker.cpp ni el programa spj.")
 		}
 	}
 	if grader := submission.Files.Grader; grader != "" {
@@ -93,7 +103,10 @@ func (j *JudgeService) Evaluate(boxID int, submission domain.Submission, tests [
 	result.Scored = !submission.Custom && (submission.ScoreAll || len(submission.Files.Groups) > 0)
 	output := ""
 	for _, test := range tests {
-		outcome, detail := j.runTest(boxID, language, artifacts, test, timeSec, memoryKB, submission.Custom, checker)
+		outcome, detail := j.runTest(boxID, language, artifacts, test, timeSec, memoryKB, submission.Custom, check)
+		if outcome.Verdict == domain.OJ_AC || outcome.Verdict == domain.OJ_PE {
+			outcome.Score = 1 // a whitespace-only difference still earns the test
+		}
 		result.Tests = append(result.Tests, outcome)
 		result.TimeMs = max(result.TimeMs, outcome.TimeMs)
 		result.MemoryKB = max(result.MemoryKB, outcome.MemoryKB)
@@ -171,7 +184,7 @@ func (j *JudgeService) compile(boxID int, language domain.Language, artifacts st
 	return domain.Result{}, true
 }
 
-func (j *JudgeService) runTest(boxID int, language domain.Language, artifacts string, test domain.TestCase, timeSec float64, memoryKB int, keepOutput bool, checker string) (domain.TestResult, string) {
+func (j *JudgeService) runTest(boxID int, language domain.Language, artifacts string, test domain.TestCase, timeSec float64, memoryKB int, keepOutput bool, check *checker) (domain.TestResult, string) {
 	outcome := domain.TestResult{Name: test.Name, Verdict: domain.OJ_RE}
 	box, err := j.Sandbox.Init(boxID)
 	if err != nil {
@@ -221,14 +234,14 @@ func (j *JudgeService) runTest(boxID int, language domain.Language, artifacts st
 
 	userOutput := filepath.Join(box, "user.out")
 	outcome.Verdict = domain.OJ_AC
-	if checker != "" {
+	if check != nil {
 		// Like the previous judge: no output limit and no difference report, the answer may not be unique.
-		verdict, err := j.specialJudge(boxID, checker, test, userOutput)
+		verdict, score, err := j.specialJudge(boxID, *check, test, userOutput)
 		if err != nil {
 			outcome.Verdict = domain.OJ_RE
 			return outcome, "No se pudo ejecutar el juez especial: " + err.Error()
 		}
-		outcome.Verdict = verdict
+		outcome.Verdict, outcome.Score = verdict, score
 		return outcome, ""
 	}
 	if test.Output != "" {
@@ -252,46 +265,144 @@ func (j *JudgeService) runTest(boxID int, language domain.Language, artifacts st
 	return outcome, ""
 }
 
-// specialJudge runs the checker of the problem in a box of its own: "spj <input> <answer> <output>",
-// where exit code 0 means accepted and anything else a wrong answer.
-func (j *JudgeService) specialJudge(boxID int, checker string, test domain.TestCase, userOutput string) (int, error) {
+// checker is the program that decides whether an output is correct. Without testlib or cms it
+// is the binary of the previous judge: "spj <input> <answer> <output>", exit code 0 accepts.
+type checker struct {
+	binary  string
+	testlib bool
+	cms     bool
+}
+
+// buildChecker compiles the checker in the sandbox the first time and again when its source
+// changes. The binary is written under a private name and renamed, so a judge running next to
+// this one never executes a half-written file.
+func (j *JudgeService) buildChecker(boxID int, source domain.Checker) error {
+	built, errBuilt := os.Stat(source.Binary)
+	written, err := os.Stat(source.Source)
+	if err != nil {
+		return err
+	}
+	if errBuilt == nil && !built.ModTime().Before(written.ModTime()) {
+		return nil
+	}
+	box, err := j.Sandbox.Init(boxID)
+	if err != nil {
+		return err
+	}
+	defer j.Sandbox.Cleanup(boxID)
+	if err := copyFile(source.Source, filepath.Join(box, "checker.cpp")); err != nil {
+		return err
+	}
+	if source.Header != "" {
+		if err := copyFile(source.Header, filepath.Join(box, "testlib.h")); err != nil {
+			return err
+		}
+	}
+	report, err := j.Sandbox.Run(boxID, abstractions.RunRequest{
+		Args:      []string{"/usr/bin/g++", "-O2", "-std=c++17", "-o", "checker", "checker.cpp"},
+		Stdout:    "compile.txt",
+		TimeSec:   compileTimeSec * 4,
+		MemoryKB:  compileMemoryKB,
+		OutputKB:  compileOutputKB,
+		Processes: 128,
+	})
+	copyFile(filepath.Join(box, "compile.txt"), source.Log)
+	if err != nil {
+		return err
+	}
+	if report.Status != "" {
+		return fmt.Errorf("checker does not compile: %s", report.Message)
+	}
+	private := fmt.Sprintf("%s.%d.%d", source.Binary, os.Getpid(), boxID)
+	if err := copyFile(filepath.Join(box, "checker"), private); err != nil {
+		return err
+	}
+	return os.Rename(private, source.Binary)
+}
+
+// specialJudge runs the checker in a box of its own and returns the verdict of the test and the
+// share of it the output earned.
+func (j *JudgeService) specialJudge(boxID int, check checker, test domain.TestCase, userOutput string) (int, float64, error) {
 	held, err := os.CreateTemp("", "patito-output-")
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	held.Close()
 	defer os.Remove(held.Name())
 	if err := copyFile(userOutput, held.Name()); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	// The box of the program cannot be reused: its accounting would add up.
 	j.Sandbox.Cleanup(boxID)
 	box, err := j.Sandbox.Init(boxID)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	for name, source := range map[string]string{"spj": checker, "data.in": test.Input, "answer.out": test.Output, "user.out": held.Name()} {
+	for name, source := range map[string]string{"spj": check.binary, "data.in": test.Input, "answer.out": test.Output, "user.out": held.Name()} {
 		if err := copyFile(source, filepath.Join(box, name)); err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 	}
+	args := []string{"./spj", "data.in", "answer.out", "user.out"}
+	if check.testlib {
+		args = []string{"./spj", "data.in", "user.out", "answer.out"}
+	}
 	report, err := j.Sandbox.Run(boxID, abstractions.RunRequest{
-		Args:      []string{"./spj", "data.in", "answer.out", "user.out"},
+		Args:      args,
 		Stdout:    "spj.txt",
+		Stderr:    "spj.err",
 		TimeSec:   checkerTimeSec,
 		MemoryKB:  compileMemoryKB,
 		OutputKB:  runOutputKB,
 		Processes: 1,
 	})
-	switch {
-	case err != nil:
-		return 0, err
-	case report.Status == "XX":
-		return 0, fmt.Errorf("%s", report.Message)
-	case report.Status == "":
-		return domain.OJ_AC, nil
+	if err != nil {
+		return 0, 0, err
 	}
-	return domain.OJ_WA, nil
+	if report.Status == "XX" {
+		return 0, 0, fmt.Errorf("%s", report.Message)
+	}
+	accepted := report.Status == ""
+	switch {
+	case check.cms:
+		// CMS: the outcome is the first thing printed.
+		return partial(accepted, filepath.Join(box, "spj.txt"), "")
+	case accepted || !check.testlib:
+		break
+	case report.Status != "RE":
+		return 0, 0, fmt.Errorf("el checker terminó de forma inesperada: %s", report.Message)
+	case report.ExitCode == 2: // _pe
+		return domain.OJ_PE, 1, nil
+	case report.ExitCode == 7: // quitp writes "points <fraction> <message>"
+		return partial(true, filepath.Join(box, "spj.err"), "points")
+	case report.ExitCode != 1: // _fail or a crash: not the fault of the submission
+		return 0, 0, fmt.Errorf("el checker falló con código %d: %s", report.ExitCode, strings.TrimSpace(readLimited(filepath.Join(box, "spj.err"))))
+	}
+	if accepted {
+		return domain.OJ_AC, 1, nil
+	}
+	return domain.OJ_WA, 0, nil
+}
+
+// partial reads the fraction a checker reported, after an optional word. A test is accepted only
+// with the whole of it.
+func partial(finished bool, path string, word string) (int, float64, error) {
+	fields := strings.Fields(readLimited(path))
+	if word != "" && len(fields) > 0 && fields[0] == word {
+		fields = fields[1:]
+	}
+	if !finished || len(fields) == 0 {
+		return 0, 0, fmt.Errorf("el checker no informó el puntaje del caso")
+	}
+	score, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("el checker informó un puntaje ilegible: %q", fields[0])
+	}
+	score = min(max(score, 0), 1)
+	if score >= 1 {
+		return domain.OJ_AC, 1, nil
+	}
+	return domain.OJ_WA, score, nil
 }
 
 // CustomTests writes the inputs of a custom run as test files. A run without inputs gets an empty one.

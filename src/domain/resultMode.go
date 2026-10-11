@@ -19,8 +19,10 @@ const (
 
 // TestResult is the outcome of one test case.
 type TestResult struct {
-	Name     string
-	Verdict  int
+	Name    string
+	Verdict int
+	// Score is the share of the test earned, from 0 to 1: a checker may give partial credit.
+	Score    float64
 	TimeMs   int
 	MemoryKB int
 }

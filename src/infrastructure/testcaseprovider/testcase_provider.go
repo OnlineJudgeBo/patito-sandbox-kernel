@@ -73,14 +73,35 @@ func (p *FileSystemTestCaseProvider) Files(problemID int) domain.ProblemFiles {
 	if info, err := os.Stat(filepath.Join(dir, "spj")); err == nil && info.Mode().IsRegular() {
 		files.SpecialJudge = filepath.Join(dir, "spj")
 	}
+	for _, name := range []string{"checker.cpp", "checker_cms.cpp"} {
+		if !isFile(filepath.Join(dir, name)) {
+			continue
+		}
+		files.Checker = domain.Checker{Source: filepath.Join(dir, name), CMS: name == "checker_cms.cpp",
+			Binary: filepath.Join(dir, "checker"), Log: filepath.Join(dir, "checker.log")}
+		if isFile(filepath.Join(dir, "testlib.h")) {
+			files.Checker.Header = filepath.Join(dir, "testlib.h")
+		}
+		break
+	}
 	if info, err := os.Stat(filepath.Join(dir, "grader.cpp")); err == nil && info.Mode().IsRegular() {
 		files.Grader = filepath.Join(dir, "grader.cpp")
-		files.Headers, _ = filepath.Glob(filepath.Join(dir, "*.h"))
+		headers, _ := filepath.Glob(filepath.Join(dir, "*.h"))
+		for _, header := range headers {
+			if filepath.Base(header) != "testlib.h" {
+				files.Headers = append(files.Headers, header)
+			}
+		}
 	}
 	if data, err := os.ReadFile(filepath.Join(dir, "scoring.json")); err == nil {
 		files.Groups = ParseGroups(data)
 	}
 	return files
+}
+
+func isFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 // ParseGroups reads scoring.json:
