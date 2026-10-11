@@ -375,3 +375,82 @@ func TestAPointsContestScoresAProblemWithoutGroupsByAcceptedTests(t *testing.T) 
 		t.Fatalf("unexpected result: %+v", result)
 	}
 }
+
+func TestSourceCheckerIsBuiltOnceAndGivesVerdictsAndPartialCredit(t *testing.T) {
+	dir := t.TempDir()
+	source := domain.Checker{Source: filepath.Join(dir, "checker.cpp"), Header: filepath.Join(dir, "testlib.h"),
+		Binary: filepath.Join(dir, "checker"), Log: filepath.Join(dir, "checker.log")}
+	os.WriteFile(source.Source, []byte("checker"), 0644)
+	os.WriteFile(source.Header, []byte("testlib"), 0644)
+	builds, compiles := 0, true
+	// What the checker answers for each test, by the content of its input.
+	answers := map[string]abstractions.RunReport{}
+	printed := map[string]string{}
+	sandbox := &fakeSandbox{t: t}
+	sandbox.run = func(box string, request abstractions.RunRequest) abstractions.RunReport {
+		switch {
+		case request.Args[len(request.Args)-1] == "checker.cpp":
+			builds++
+			if !exists(filepath.Join(box, "testlib.h")) {
+				t.Fatal("the testlib.h of the problem must be next to the checker")
+			}
+			os.WriteFile(filepath.Join(box, request.Stdout), []byte("compiler says"), 0644)
+			if !compiles {
+				return abstractions.RunReport{Status: "RE", ExitCode: 1}
+			}
+			os.WriteFile(filepath.Join(box, "checker"), []byte("binary"), 0755)
+			return abstractions.RunReport{}
+		case request.Args[0] == "./spj":
+			input, _ := os.ReadFile(filepath.Join(box, "data.in"))
+			os.WriteFile(filepath.Join(box, request.Stdout), []byte(printed[string(input)]), 0644)
+			os.WriteFile(filepath.Join(box, request.Stderr), []byte(printed[string(input)]), 0644)
+			return answers[string(input)]
+		}
+		return echoInput(box, request)
+	}
+	submission := cpp()
+	submission.SpecialJudge = true
+	submission.Files.Checker = source
+	submission.Files.Groups = []domain.ScoreGroup{{Points: 100, Type: "sum", Patterns: []string{"*"}}}
+	tests := writeTests(t, [2]string{"ok", "x"}, [2]string{"wa", "x"}, [2]string{"pe", "x"}, [2]string{"half", "x"})
+
+	compiles = false
+	if result := judge(sandbox).Evaluate(0, submission, tests); result.Verdict != domain.OJ_RE || !strings.Contains(result.RuntimeOutput, "checker.log") {
+		t.Fatalf("a checker that does not compile is not a wrong answer: %+v", result)
+	}
+	if log, _ := os.ReadFile(source.Log); string(log) != "compiler says" {
+		t.Fatalf("the compiler output must be kept: %q", log)
+	}
+
+	// testlib: exit code 0 ok, 1 wrong, 2 presentation, 7 partial with "points <fraction>".
+	compiles = true
+	answers = map[string]abstractions.RunReport{"ok": {}, "wa": {Status: "RE", ExitCode: 1}, "pe": {Status: "RE", ExitCode: 2}, "half": {Status: "RE", ExitCode: 7}}
+	printed = map[string]string{"half": "points 0.5 close enough"}
+	result := judge(sandbox).Evaluate(0, submission, tests)
+	if result.Verdict != domain.OJ_WA || result.Score != 0.625 || result.Tests[2].Verdict != domain.OJ_PE || result.Tests[3].Score != 0.5 {
+		t.Fatalf("unexpected testlib result: %+v", result)
+	}
+	if args := sandbox.requests[len(sandbox.requests)-1].Args; args[2] != "user.out" || args[3] != "answer.out" {
+		t.Fatalf("testlib takes the output before the answer: %v", args)
+	}
+	judge(sandbox).Evaluate(0, submission, tests)
+	if builds != 2 {
+		t.Fatalf("the checker must be built once and reused, built %d times", builds)
+	}
+	answers["wa"] = abstractions.RunReport{Status: "RE", ExitCode: 3}
+	if result := judge(sandbox).Evaluate(0, submission, tests); result.Verdict != domain.OJ_RE {
+		t.Fatalf("a failing checker is not the fault of the submission: %+v", result)
+	}
+
+	// CMS: the checker prints the outcome and takes the answer before the output.
+	submission.Files.Checker.CMS = true
+	answers = map[string]abstractions.RunReport{"ok": {}, "wa": {}, "pe": {}, "half": {}}
+	printed = map[string]string{"ok": "1.0\n", "wa": "0\n", "pe": "1\n", "half": "0.25\n"}
+	result = judge(sandbox).Evaluate(0, submission, tests)
+	if result.Verdict != domain.OJ_WA || result.Score != 0.5625 || result.Tests[0].Verdict != domain.OJ_AC {
+		t.Fatalf("unexpected CMS result: %+v", result)
+	}
+	if args := sandbox.requests[len(sandbox.requests)-1].Args; args[2] != "answer.out" || args[3] != "user.out" {
+		t.Fatalf("a CMS checker takes the answer before the output: %v", args)
+	}
+}

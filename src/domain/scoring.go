@@ -20,8 +20,8 @@ type GroupScore struct {
 }
 
 // Score returns the points of every group and the total as a fraction from 0 to 1. Without
-// groups the fraction is the share of accepted tests. Inside a group a whitespace-only
-// difference still earns the test, and a test outside every group earns nothing.
+// groups the fraction is the share of accepted tests. Inside a group every test counts by its
+// Score, and a test outside every group earns nothing.
 func Score(groups []ScoreGroup, tests []TestResult) ([]GroupScore, float64) {
 	if len(groups) == 0 {
 		accepted := 0
@@ -44,14 +44,10 @@ func Score(groups []ScoreGroup, tests []TestResult) ([]GroupScore, float64) {
 			if !group.has(test.Name) {
 				continue
 			}
-			outcome := 0.0
-			if test.Verdict == OJ_AC || test.Verdict == OJ_PE {
-				outcome = 1
-			}
 			count++
-			sum += outcome
-			lowest = min(lowest, outcome)
-			product *= outcome
+			sum += test.Score
+			lowest = min(lowest, test.Score)
+			product *= test.Score
 		}
 		factor := 0.0
 		switch {

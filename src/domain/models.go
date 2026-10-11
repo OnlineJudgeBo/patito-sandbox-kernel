@@ -28,11 +28,28 @@ type ProblemFiles struct {
 	// SpecialJudge is the binary "spj": it gets the input, the answer and the output of the
 	// program as arguments and exits with 0 when the output is correct.
 	SpecialJudge string
+	// Checker is the source of a checker; it wins over SpecialJudge.
+	Checker Checker
 	// Grader owns main() and is compiled with the submission, which only writes a function.
 	Grader  string
 	Headers []string
 	// Groups come from scoring.json: the problem is scored by subtasks.
 	Groups []ScoreGroup
+}
+
+// Checker is a checker given as source, built once and kept next to it. Source is empty when
+// the problem has none.
+type Checker struct {
+	// Source is checker.cpp, which follows testlib: "checker <input> <output> <answer>" and the
+	// exit code is the verdict. With CMS set it is checker_cms.cpp: "checker <input> <answer>
+	// <output>" and it prints the outcome, a fraction from 0 to 1.
+	Source string
+	CMS    bool
+	// Header is the testlib.h the problem brings, or empty to use the one of the judge.
+	Header string
+	// Binary and Log are where the judge leaves the built checker and the compiler output.
+	Binary string
+	Log    string
 }
 
 // CustomCase is one input typed in the IDE. Expected is nil when the output is only shown, not compared.
