@@ -32,8 +32,9 @@ type JudgeOptions struct {
 	BonusMemoryMB int
 }
 
-// JudgeService compiles a submission and runs it against the tests of its problem, ICPC style:
-// it stops at the first test that is not accepted and that test gives the verdict.
+// JudgeService compiles a submission and runs it against the tests of its problem. ICPC style, it
+// stops at the first test that is not accepted and that test gives the verdict. A problem with
+// score groups, or a contest ranked by points, runs every test and the submission gets a score.
 type JudgeService struct {
 	Sandbox    abstractions.Sandbox
 	Comparator abstractions.Comparator
@@ -89,18 +90,27 @@ func (j *JudgeService) Evaluate(boxID int, submission domain.Submission, tests [
 
 	timeSec, memoryKB := j.limits(submission, language)
 	result := domain.Result{Verdict: domain.OJ_AC}
+	result.Scored = !submission.Custom && (submission.ScoreAll || len(submission.Files.Groups) > 0)
 	output := ""
 	for _, test := range tests {
 		outcome, detail := j.runTest(boxID, language, artifacts, test, timeSec, memoryKB, submission.Custom, checker)
 		result.Tests = append(result.Tests, outcome)
 		result.TimeMs = max(result.TimeMs, outcome.TimeMs)
 		result.MemoryKB = max(result.MemoryKB, outcome.MemoryKB)
-		if outcome.Verdict != domain.OJ_AC {
-			result.Verdict = outcome.Verdict
-			result.RuntimeOutput = detail
+		if outcome.Verdict == domain.OJ_AC {
+			output = detail
+			continue
+		}
+		// When every test runs, the highest verdict code is the one shown, like the previous judge.
+		if outcome.Verdict > result.Verdict {
+			result.Verdict, result.RuntimeOutput = outcome.Verdict, detail
+		}
+		if !result.Scored {
 			break
 		}
-		output = detail
+	}
+	if result.Scored {
+		result.Groups, result.Score = domain.Score(submission.Files.Groups, result.Tests)
 	}
 	if submission.Custom && result.Verdict == domain.OJ_AC {
 		// The IDE shows what the program printed for the last input.

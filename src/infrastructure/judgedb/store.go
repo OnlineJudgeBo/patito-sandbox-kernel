@@ -85,12 +85,13 @@ func (s *Store) Load(id int) (domain.Submission, error) {
 		// A run without a problem gets the limits the previous judge gave it.
 		"SELECT s.problem_id, s.user_id, s.language, s.contest_id, COALESCE(p.time_limit, 5), COALESCE(p.memory_limit, 128), c.source,"+
 			// The admin API stores Y/N; older rows hold 1/0.
-			" COALESCE(p.spj IN ('1', 'Y'), 0),"+
+			" COALESCE(p.spj IN ('1', 'Y'), 0), COALESCE(t.obi, 0),"+
 			" EXISTS (SELECT 1 FROM custom_input i WHERE i.solution_id = s.solution_id)"+
 			" FROM solution s LEFT JOIN problem p ON p.problem_id = s.problem_id"+
+			" LEFT JOIN contest t ON t.contest_id = s.contest_id"+
 			" JOIN source_code c ON c.solution_id = s.solution_id WHERE s.solution_id = ?", id).
 		Scan(&submission.ProblemID, &submission.UserID, &submission.LanguageID, &contest,
-			&submission.TimeLimitSec, &submission.MemoryLimitMB, &submission.Source, &submission.SpecialJudge, &submission.Custom)
+			&submission.TimeLimitSec, &submission.MemoryLimitMB, &submission.Source, &submission.SpecialJudge, &submission.ScoreAll, &submission.Custom)
 	submission.ContestID = int(contest.Int64)
 	if err != nil {
 		return submission, err
@@ -191,6 +192,21 @@ func ToUTF8(text string) string {
 	return string(runes)
 }
 
+// saveScore never fails the verdict: a database without the group scoring migration cannot hold
+// a full score (pass_rate was decimal(2,2)) and has no solution_subtask table.
+func (s *Store) saveScore(id int, result domain.Result) {
+	if _, err := s.db.Exec("UPDATE solution SET pass_rate = ? WHERE solution_id = ?", result.Score, id); err != nil {
+		s.db.Exec("UPDATE solution SET pass_rate = LEAST(?, 0.99) WHERE solution_id = ?", result.Score, id)
+	}
+	if _, err := s.db.Exec("DELETE FROM solution_subtask WHERE solution_id = ?", id); err != nil {
+		return
+	}
+	for index, group := range result.Groups {
+		s.db.Exec("INSERT INTO solution_subtask (solution_id, subtask, points, max_points, tests) VALUES (?, ?, ?, ?, ?)",
+			id, index+1, group.Points, group.MaxPoints, group.Tests)
+	}
+}
+
 // Save writes the verdict last, after its details: whoever polls the row sees a finished submission.
 func (s *Store) Save(submission domain.Submission, result domain.Result) error {
 	for table, text := range map[string]string{"compileinfo": result.CompileOutput, "runtimeinfo": result.RuntimeOutput} {
@@ -203,6 +219,9 @@ func (s *Store) Save(submission domain.Submission, result domain.Result) error {
 		if _, err := s.db.Exec("INSERT INTO "+table+" (solution_id, error) VALUES (?, ?)", submission.ID, ToUTF8(text)); err != nil {
 			return err
 		}
+	}
+	if result.Scored {
+		s.saveScore(submission.ID, result)
 	}
 	if _, err := s.db.Exec("UPDATE solution SET result = ?, time = ?, memory = ? WHERE solution_id = ?",
 		result.Verdict, result.TimeMs, result.MemoryKB, submission.ID); err != nil {

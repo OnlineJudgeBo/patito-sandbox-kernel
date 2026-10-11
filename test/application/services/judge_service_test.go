@@ -342,3 +342,36 @@ func TestGraderIsCompiledWithTheSubmissionAndHiddenFromIt(t *testing.T) {
 		t.Fatalf("graders are C++ only: %+v", result)
 	}
 }
+
+func TestScoreGroupsRunEveryTestAndPayEachGroupByItsType(t *testing.T) {
+	sandbox := &fakeSandbox{t: t, run: echoInput}
+	submission := cpp()
+	submission.Files.Groups = []domain.ScoreGroup{
+		{Points: 10, Type: "sum", Patterns: []string{"[ab]"}},
+		{Points: 20, Type: "min", Patterns: []string{"b", "c"}},
+		{Points: 30, Type: "mul", Patterns: []string{"c"}},
+	}
+
+	// a passes, b is wrong, c differs only in whitespace.
+	result := judge(sandbox).Evaluate(0, submission, writeTests(t, [2]string{"1\n", "1\n"}, [2]string{"2\n", "5\n"}, [2]string{"3\n", "3 \n"}))
+
+	if result.Verdict != domain.OJ_WA || len(result.Tests) != 3 || !strings.Contains(result.RuntimeOutput, "Respuesta Correcta:\n5") {
+		t.Fatalf("every test must run and the worst one give the verdict: %+v", result)
+	}
+	want := []domain.GroupScore{{Points: 5, MaxPoints: 10, Tests: 2}, {Points: 0, MaxPoints: 20, Tests: 2}, {Points: 30, MaxPoints: 30, Tests: 1}}
+	if !result.Scored || result.Score != 35.0/60 || len(result.Groups) != 3 || result.Groups[0] != want[0] || result.Groups[1] != want[1] || result.Groups[2] != want[2] {
+		t.Fatalf("unexpected score: %v %+v", result.Score, result.Groups)
+	}
+}
+
+func TestAPointsContestScoresAProblemWithoutGroupsByAcceptedTests(t *testing.T) {
+	sandbox := &fakeSandbox{t: t, run: echoInput}
+	submission := cpp()
+	submission.ScoreAll = true
+
+	result := judge(sandbox).Evaluate(0, submission, writeTests(t, [2]string{"1\n", "1\n"}, [2]string{"2\n", "5\n"}, [2]string{"3\n", "3\n"}, [2]string{"4\n", "4\n"}))
+
+	if result.Verdict != domain.OJ_WA || len(result.Tests) != 4 || result.Score != 0.75 || result.Groups != nil {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}

@@ -116,3 +116,24 @@ func TestDolosPairsAreReadFromTheCSVReport(t *testing.T) {
 		t.Fatal("a report without the expected columns must be an error")
 	}
 }
+
+func TestScoringFileGivesTheGroupsAndSkipsTheMalformedOnes(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "1000"), 0755)
+	os.WriteFile(filepath.Join(root, "1000", "scoring.json"), []byte(`{"groups": [
+		{"name": "Subtarea 1", "points": 10, "tests": "s1_*"},
+		{"points": 20, "type": "min", "tests": ["s2_*", "extra"]},
+		{"points": "many", "tests": "x"},
+		{"points": 5},
+		{"points": 5, "type": "other", "tests": ["y"]}]}`), 0644)
+
+	groups := testcaseprovider.NewFileSystemTestCaseProvider(root).Files(1000).Groups
+
+	if len(groups) != 3 || groups[0].Type != "sum" || groups[0].Patterns[0] != "s1_*" || groups[1].Type != "min" ||
+		len(groups[1].Patterns) != 2 || groups[1].Points != 20 || groups[2].Type != "sum" {
+		t.Fatalf("unexpected groups: %+v", groups)
+	}
+	if testcaseprovider.ParseGroups([]byte("not json")) != nil {
+		t.Fatal("a file that is not JSON gives no groups")
+	}
+}

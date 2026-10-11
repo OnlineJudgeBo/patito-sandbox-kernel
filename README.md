@@ -149,7 +149,29 @@ GRANT SELECT, INSERT, UPDATE ON jol.shadow_verdict TO 'judge'@'%';
   the `*.h` files next to it are compiled with the submission (C++ only) and the grader source is
   removed before the program runs.
 
+## Score groups
+
+A submission is judged on every test, instead of stopping at the first failure, when its problem
+has `data/<problem_id>/scoring.json` or its contest is ranked by points (`contest.obi`).
+
+```json
+{ "groups": [
+  { "name": "Subtarea 1", "points": 10, "type": "sum", "tests": "s1_*" },
+  { "points": 20, "type": "min", "tests": ["s2_*", "extra"] }
+] }
+```
+
+- `tests` are globs (`*`, `?`, `[set]`) over the test name without `.in`. A test may be in several
+  groups; a test in none earns nothing.
+- `type`: `sum` pays in proportion to the tests passed (default), `min` the worst test (all or
+  nothing), `mul` the product. A whitespace-only difference still earns the test.
+- Without groups the score is the share of accepted tests.
+- The score goes to `solution.pass_rate` as a fraction from 0 to 1 and the points of each group to
+  `solution_subtask`. The verdict shown is the highest code among the tests.
+- Both need the group scoring migration of the admin API. Without it the judge keeps working, but
+  a full score is stored as 0.99 and the groups are not recorded.
+
 ## Not supported yet
 
-- Checkers given as source (testlib) and score groups.
+- Checkers given as source (testlib), and with them partial credit for a single test.
 - The other languages of the previous judge (Pascal, C#, PHP, ...).
