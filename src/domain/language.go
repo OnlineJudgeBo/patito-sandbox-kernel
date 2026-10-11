@@ -9,13 +9,23 @@ type Language struct {
 	Source string
 	// Compile is run inside the sandbox; empty when there is nothing to build.
 	Compile []string
-	// GraderCompile builds the submission together with grader.cpp; empty when graders are not supported.
-	GraderCompile []string
-	Run           []string
+	Run     []string
+	// Grader says how to judge a problem solved by writing a function; nil when the language cannot.
+	Grader *GraderBuild
 	// Interpreted and JVM languages get the bonus configured in judge.json.
 	Bonus bool
 	// Threads and child processes the program may create.
 	Processes int
+}
+
+// GraderBuild joins the submission with the grader of the problem, the file that owns the entry
+// point: it reads the test, calls the function the submission wrote and prints the result.
+type GraderBuild struct {
+	// File is the name of the grader in the folder of the problem.
+	File    string
+	Compile []string
+	// Run replaces the run command of the language when the grader is what starts; empty keeps it.
+	Run []string
 }
 
 // JavaOptions are filled from judge.json (javaXms, javaXmx).
@@ -28,14 +38,27 @@ type JavaOptions struct {
 func LanguageByID(id int, java JavaOptions) (Language, bool) {
 	cpp := []string{"/usr/bin/g++", "Main.cc", "-o", "Main", "-fno-asm", "-Wall", "-lm", "--static", "-DONLINE_JUDGE"}
 	python := Language{
-		Name:      "Python 3",
-		Source:    "Main.py",
-		Compile:   []string{"/usr/bin/python3", "-m", "py_compile", "Main.py"},
-		Run:       []string{"/usr/bin/python3", "Main.py"},
+		Name:    "Python 3",
+		Source:  "Main.py",
+		Compile: []string{"/usr/bin/python3", "-m", "py_compile", "Main.py"},
+		Run:     []string{"/usr/bin/python3", "Main.py"},
+		// grader.py imports the function: "from Main import solve".
+		Grader: &GraderBuild{
+			File:    "grader.py",
+			Compile: []string{"/usr/bin/python3", "-m", "py_compile", "Main.py", "grader.py"},
+			Run:     []string{"/usr/bin/python3", "grader.py"},
+		},
 		Bonus:     true,
 		Processes: 1,
 	}
-	grader := []string{"/usr/bin/g++", "Main.cc", "grader.cpp", "-o", "Main", "-fno-asm", "-Wall", "-lm", "--static", "-std=c++17", "-DONLINE_JUDGE"}
+	// grader.cpp has main() and is linked with the submission.
+	grader := &GraderBuild{
+		File:    "grader.cpp",
+		Compile: []string{"/usr/bin/g++", "Main.cc", "grader.cpp", "-o", "Main", "-fno-asm", "-Wall", "-lm", "--static", "-std=c++17", "-DONLINE_JUDGE"},
+	}
+	javac := []string{"/usr/bin/javac", "-J" + java.Xms, "-J" + java.Xmx, "-encoding", "UTF-8", "Main.java"}
+	// One collector thread keeps the JVM inside the process limit and its timing stable.
+	jvm := []string{"/usr/bin/java", java.Xms, java.Xmx, "-XX:+UseSerialGC", "-Xss64m"}
 	switch id {
 	case 0:
 		return Language{
@@ -46,16 +69,21 @@ func LanguageByID(id int, java JavaOptions) (Language, bool) {
 			Processes: 1,
 		}, true
 	case 1:
-		return Language{Name: "C++", Source: "Main.cc", Compile: cpp, GraderCompile: grader, Run: []string{"./Main"}, Processes: 1}, true
+		return Language{Name: "C++", Source: "Main.cc", Compile: cpp, Grader: grader, Run: []string{"./Main"}, Processes: 1}, true
 	case 16:
-		return Language{Name: "C++11", Source: "Main.cc", Compile: append(cpp, "-std=c++11"), GraderCompile: grader, Run: []string{"./Main"}, Processes: 1}, true
+		return Language{Name: "C++11", Source: "Main.cc", Compile: append(cpp, "-std=c++11"), Grader: grader, Run: []string{"./Main"}, Processes: 1}, true
 	case 3:
 		return Language{
 			Name:    "Java",
 			Source:  "Main.java",
-			Compile: []string{"/usr/bin/javac", "-J" + java.Xms, "-J" + java.Xmx, "-encoding", "UTF-8", "Main.java"},
-			// One collector thread keeps the JVM inside the process limit and its timing stable.
-			Run:       []string{"/usr/bin/java", java.Xms, java.Xmx, "-XX:+UseSerialGC", "-Xss64m", "Main"},
+			Compile: javac,
+			Run:     append(jvm[:len(jvm):len(jvm)], "Main"),
+			// grader.java holds the class "grader" with main(), which calls the static method of Main.
+			Grader: &GraderBuild{
+				File:    "grader.java",
+				Compile: append(javac[:len(javac):len(javac)], "grader.java"),
+				Run:     append(jvm[:len(jvm):len(jvm)], "grader"),
+			},
 			Bonus:     true,
 			Processes: 64,
 		}, true

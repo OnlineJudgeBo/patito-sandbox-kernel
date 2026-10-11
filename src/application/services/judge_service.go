@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -78,12 +79,21 @@ func (j *JudgeService) Evaluate(boxID int, submission domain.Submission, tests [
 			return failure("El problema usa juez especial pero no tiene checker.cpp ni el programa spj.")
 		}
 	}
-	if grader := submission.Files.Grader; grader != "" {
-		if len(language.GraderCompile) == 0 {
-			return domain.Result{Verdict: domain.OJ_CE, CompileOutput: "Este problema se resuelve implementando una función y solo admite C++."}
+	graderFile := ""
+	if graders := submission.Files.Graders; len(graders) > 0 {
+		index := -1
+		if language.Grader != nil {
+			index = slices.IndexFunc(graders, func(path string) bool { return filepath.Base(path) == language.Grader.File })
 		}
-		language.Compile = language.GraderCompile
-		for _, file := range append([]string{grader}, submission.Files.Headers...) {
+		if index < 0 {
+			return domain.Result{Verdict: domain.OJ_CE, CompileOutput: "Este problema se resuelve implementando una función y no admite este lenguaje."}
+		}
+		graderFile = language.Grader.File
+		language.Compile = language.Grader.Compile
+		if len(language.Grader.Run) > 0 {
+			language.Run = language.Grader.Run
+		}
+		for _, file := range append([]string{graders[index]}, submission.Files.Headers...) {
 			if err := copyFile(file, filepath.Join(artifacts, filepath.Base(file))); err != nil {
 				return failure("No se pudo preparar el grader: " + err.Error())
 			}
@@ -95,8 +105,11 @@ func (j *JudgeService) Evaluate(boxID int, submission domain.Submission, tests [
 			return result
 		}
 	}
-	// The grader source is secret: the running submission must not find it in its box.
-	os.Remove(filepath.Join(artifacts, "grader.cpp"))
+	// The grader source is secret: once built, the running submission must not find it in its
+	// box. An interpreted grader has to stay, it is what runs.
+	if graderFile != "" && !slices.Contains(language.Run, graderFile) {
+		os.Remove(filepath.Join(artifacts, graderFile))
+	}
 
 	timeSec, memoryKB := j.limits(submission, language)
 	result := domain.Result{Verdict: domain.OJ_AC}

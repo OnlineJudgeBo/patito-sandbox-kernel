@@ -84,8 +84,13 @@ func (p *FileSystemTestCaseProvider) Files(problemID int) domain.ProblemFiles {
 		}
 		break
 	}
-	if info, err := os.Stat(filepath.Join(dir, "grader.cpp")); err == nil && info.Mode().IsRegular() {
-		files.Grader = filepath.Join(dir, "grader.cpp")
+	graders, _ := filepath.Glob(filepath.Join(dir, "grader.*"))
+	for _, grader := range graders {
+		if isFile(grader) {
+			files.Graders = append(files.Graders, grader)
+		}
+	}
+	if len(files.Graders) > 0 {
 		headers, _ := filepath.Glob(filepath.Join(dir, "*.h"))
 		for _, header := range headers {
 			if filepath.Base(header) != "testlib.h" {

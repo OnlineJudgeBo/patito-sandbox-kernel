@@ -159,9 +159,18 @@ takes the first of these it finds in `data/<problem_id>/`:
   a message, never a wrong answer.
 - Partial credit is the score of the test inside its groups; the test is accepted only with 1.
 
-- A problem with `data/<problem_id>/grader.cpp` is solved by writing a function. The grader and
-  the `*.h` files next to it are compiled with the submission (C++ only) and the grader source is
-  removed before the program runs.
+A problem with a grader is solved by writing a function: the grader owns the entry point, reads
+the test, calls the function and prints the result. The problem accepts the languages it brings a
+grader for; a submission in another language gets a compilation error.
+
+| File | Language | The submission writes | Built and run as |
+| --- | --- | --- | --- |
+| `grader.cpp` and `*.h` | C++ | the function declared in the header | `g++ Main.cc grader.cpp`, `./Main` |
+| `grader.java` (class `grader`) | Java | `public class Main` with a static method | `javac Main.java grader.java`, `java grader` |
+| `grader.py` | Python 3 | a function in its file, imported with `from Main import ...` | `python3 grader.py` |
+
+The grader source is removed before the program runs, except `grader.py`, which is what runs:
+a Python submission can read it, and a Java one can read `grader.class`.
 
 ## Score groups
 
