@@ -311,8 +311,8 @@ func TestSpecialJudgeDecidesInsteadOfComparing(t *testing.T) {
 		t.Fatalf("expected accepted: %+v", result)
 	}
 	accepts = false
-	if result := judge(sandbox).Evaluate(0, submission, tests); result.Verdict != domain.OJ_WA || result.RuntimeOutput != "" {
-		t.Fatalf("expected wrong answer without a difference report: %+v", result)
+	if result := judge(sandbox).Evaluate(0, submission, tests); result.Verdict != domain.OJ_WA || !strings.Contains(result.RuntimeOutput, "Tu respuesta:") {
+		t.Fatalf("expected wrong answer with a difference report: %+v", result)
 	}
 }
 
@@ -477,6 +477,9 @@ func TestSourceCheckerIsBuiltOnceAndGivesVerdictsAndPartialCredit(t *testing.T) 
 	result := judge(sandbox).Evaluate(0, submission, tests)
 	if result.Verdict != domain.OJ_WA || result.Score != 0.625 || result.Tests[2].Verdict != domain.OJ_PE || result.Tests[3].Score != 0.5 {
 		t.Fatalf("unexpected testlib result: %+v", result)
+	}
+	if !strings.Contains(result.RuntimeOutput, "Tu respuesta:\nwa") || !strings.Contains(result.RuntimeOutput, "varias respuestas") {
+		t.Fatalf("a checker problem also reports the failed test: %q", result.RuntimeOutput)
 	}
 	if args := sandbox.requests[len(sandbox.requests)-1].Args; args[2] != "user.out" || args[3] != "answer.out" {
 		t.Fatalf("testlib takes the output before the answer: %v", args)
