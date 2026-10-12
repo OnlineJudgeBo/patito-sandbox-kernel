@@ -391,6 +391,27 @@ func TestScoreGroupsRunEveryTestAndPayEachGroupByItsType(t *testing.T) {
 	}
 }
 
+func TestAFailedSampleStopsAScoredSubmissionWithNoPoints(t *testing.T) {
+	sandbox := &fakeSandbox{t: t, run: echoInput}
+	submission := cpp()
+	submission.Files.Groups = []domain.ScoreGroup{{Points: 100, Type: "sum", Patterns: []string{"[ab]"}}}
+	tests := writeTests(t, [2]string{"1\n", "1\n"}, [2]string{"2\n", "2\n"}, [2]string{"3\n", "5\n"})
+	tests[2].Name = "sample"
+
+	result := judge(sandbox).Evaluate(0, submission, tests)
+
+	if result.Verdict != domain.OJ_WA || len(result.Tests) != 1 || !result.Scored || result.Score != 0 || result.Groups != nil {
+		t.Fatalf("the sample must run first and stop the rest: %+v", result)
+	}
+
+	// A sample that passes does not change the points of the groups.
+	os.WriteFile(tests[2].Output, []byte("3\n"), 0644)
+	result = judge(sandbox).Evaluate(0, submission, tests)
+	if result.Verdict != domain.OJ_AC || len(result.Tests) != 3 || result.Score != 1 {
+		t.Fatalf("unexpected result with a passing sample: %+v", result)
+	}
+}
+
 func TestAPointsContestScoresAProblemWithoutGroupsByAcceptedTests(t *testing.T) {
 	sandbox := &fakeSandbox{t: t, run: echoInput}
 	submission := cpp()
