@@ -114,14 +114,6 @@ func (j *JudgeService) Evaluate(boxID int, submission domain.Submission, tests [
 	timeSec, memoryKB := j.limits(submission, language)
 	result := domain.Result{Verdict: domain.OJ_AC}
 	result.Scored = !submission.Custom && (submission.ScoreAll || len(submission.Files.Groups) > 0)
-	sampleFailed := false
-	if result.Scored {
-		// The samples of the statement go first: a submission that fails one earns nothing.
-		tests = slices.Clone(tests)
-		slices.SortStableFunc(tests, func(a, b domain.TestCase) int {
-			return strings.Compare(sampleOrder(a.Name), sampleOrder(b.Name))
-		})
-	}
 	output := ""
 	for _, test := range tests {
 		outcome, detail := j.runTest(boxID, language, artifacts, test, timeSec, memoryKB, submission.Custom, check)
@@ -139,12 +131,11 @@ func (j *JudgeService) Evaluate(boxID int, submission domain.Submission, tests [
 		if outcome.Verdict > result.Verdict {
 			result.Verdict, result.RuntimeOutput = outcome.Verdict, detail
 		}
-		sampleFailed = isSample(test.Name) && outcome.Score == 0
-		if !result.Scored || sampleFailed {
+		if !result.Scored {
 			break
 		}
 	}
-	if result.Scored && !sampleFailed {
+	if result.Scored {
 		result.Groups, result.Score = domain.Score(submission.Files.Groups, result.Tests)
 	}
 	if submission.Custom && result.Verdict == domain.OJ_AC {
@@ -152,18 +143,6 @@ func (j *JudgeService) Evaluate(boxID int, submission domain.Submission, tests [
 		result.Verdict, result.RuntimeOutput = domain.OJ_TR, output
 	}
 	return result
-}
-
-// isSample tells the samples of the statement (sample.in, sample2.in, ...) from the judge tests.
-func isSample(name string) bool {
-	return strings.HasPrefix(name, "sample")
-}
-
-func sampleOrder(name string) string {
-	if isSample(name) {
-		return "0"
-	}
-	return "1"
 }
 
 func (j *JudgeService) limits(submission domain.Submission, language domain.Language) (float64, int) {
