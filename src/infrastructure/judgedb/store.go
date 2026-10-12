@@ -36,7 +36,10 @@ func (s *Store) Pending(limit int, languages []int) ([]int, error) {
 	if len(languages) == 0 {
 		return nil, nil
 	}
+	// The web inserts the solution first and its source right after: a row without source is
+	// not ready yet, and claiming it would leave it waiting until it counts as stuck.
 	return s.ids("SELECT solution_id FROM solution WHERE result < 2 AND language IN ("+languageList(languages)+")"+
+		" AND EXISTS (SELECT 1 FROM source_code c WHERE c.solution_id = solution.solution_id)"+
 		" ORDER BY result ASC, solution_id ASC LIMIT ?", limit)
 }
 
