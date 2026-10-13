@@ -248,13 +248,17 @@ func (j *JudgeService) runTest(boxID int, language domain.Language, artifacts st
 	userOutput := filepath.Join(box, "user.out")
 	outcome.Verdict = domain.OJ_AC
 	if check != nil {
-		// Like the previous judge: no output limit and no difference report, the answer may not be unique.
+		// Like the previous judge: no output limit, the answer may not be unique.
 		verdict, score, err := j.specialJudge(boxID, *check, test, userOutput)
 		if err != nil {
 			outcome.Verdict = domain.OJ_RE
 			return outcome, "No se pudo ejecutar el juez especial: " + err.Error()
 		}
 		outcome.Verdict, outcome.Score = verdict, score
+		if verdict != domain.OJ_AC {
+			return outcome, "El problema admite varias respuestas: la respuesta correcta que se muestra es solo una de las válidas.\n\n" +
+				differenceReport(test, userOutput)
+		}
 		return outcome, ""
 	}
 	if test.Output != "" {
