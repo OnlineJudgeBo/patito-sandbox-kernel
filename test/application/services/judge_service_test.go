@@ -233,6 +233,18 @@ func TestLimitsOutOfRangeAreClampedLikeThePreviousJudge(t *testing.T) {
 	}
 }
 
+func TestAFractionalTimeLimitIsKept(t *testing.T) {
+	sandbox := &fakeSandbox{t: t, run: echoInput}
+	submission := cpp()
+	submission.TimeLimitSec = 0.5
+
+	judge(sandbox).Evaluate(0, submission, writeTests(t, [2]string{"1\n", "1\n"}))
+
+	if run := sandbox.requests[1]; run.TimeSec != 0.5 {
+		t.Fatalf("unexpected time limit: %+v", run)
+	}
+}
+
 func TestSubmissionsThatCannotBeJudgedStillGetAVerdict(t *testing.T) {
 	sandbox := &fakeSandbox{t: t, run: echoInput}
 	unsupported := cpp()

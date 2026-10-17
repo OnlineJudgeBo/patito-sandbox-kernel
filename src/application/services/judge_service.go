@@ -148,16 +148,16 @@ func (j *JudgeService) Evaluate(boxID int, submission domain.Submission, tests [
 func (j *JudgeService) limits(submission domain.Submission, language domain.Language) (float64, int) {
 	timeSec, memoryMB := submission.TimeLimitSec, submission.MemoryLimitMB
 	if language.Bonus {
-		timeSec += j.Options.BonusTimeSec
+		timeSec += float64(j.Options.BonusTimeSec)
 		memoryMB += j.Options.BonusMemoryMB
 	}
-	if timeSec < 1 || timeSec > maxTimeSec {
+	if timeSec <= 0 || timeSec > maxTimeSec {
 		timeSec = maxTimeSec
 	}
 	if memoryMB < 1 || memoryMB > maxMemoryMB {
 		memoryMB = maxMemoryMB
 	}
-	return float64(timeSec), memoryMB * 1024
+	return timeSec, memoryMB * 1024
 }
 
 // compile builds inside the sandbox, so a hostile source cannot reach the host through the compiler.
