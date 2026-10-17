@@ -8,8 +8,9 @@ type Submission struct {
 	UserID     string
 	LanguageID int
 	Source     string
-	// Limits of the problem, before the language bonus.
-	TimeLimitSec  int
+	// Limits of the problem, before the language bonus. The time is decimal: some databases keep
+	// problem.time_limit as DECIMAL (1.000) and a limit may be under a second.
+	TimeLimitSec  float64
 	MemoryLimitMB int
 	// Custom marks a run from the IDE: it uses CustomCases instead of the tests of the problem,
 	// reports the program output and does not count as a submission.

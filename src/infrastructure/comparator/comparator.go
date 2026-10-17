@@ -27,6 +27,10 @@ func (c *Comparator) CompareZoj(expectedPath, outputPath string) (int, error) {
 		return domain.OJ_RE, fmt.Errorf("error reading user output: %w", err2)
 	}
 
+	// Tests written on Windows end their lines with \r\n; a program printing \n is still exact.
+	expectedBytes = bytes.ReplaceAll(expectedBytes, []byte("\r\n"), []byte("\n"))
+	outputBytes = bytes.ReplaceAll(outputBytes, []byte("\r\n"), []byte("\n"))
+
 	// Compare directly first
 	if bytes.Equal(bytes.TrimRight(expectedBytes, "\r\n \t"), bytes.TrimRight(outputBytes, "\r\n \t")) {
 		return domain.OJ_AC, nil

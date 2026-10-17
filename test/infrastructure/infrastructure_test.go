@@ -9,12 +9,32 @@ import (
 
 	"github.com/samuelloza/isolate-wrapper/src/application/abstractions"
 	"github.com/samuelloza/isolate-wrapper/src/domain"
+	"github.com/samuelloza/isolate-wrapper/src/infrastructure/comparator"
 	"github.com/samuelloza/isolate-wrapper/src/infrastructure/config"
 	"github.com/samuelloza/isolate-wrapper/src/infrastructure/dolos"
 	"github.com/samuelloza/isolate-wrapper/src/infrastructure/isolate"
 	"github.com/samuelloza/isolate-wrapper/src/infrastructure/judgedb"
 	"github.com/samuelloza/isolate-wrapper/src/infrastructure/testcaseprovider"
 )
+
+func TestWindowsLineEndingsInTheAnswerAreStillAccepted(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, text string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	answer := write("test.out", "8: -1\r\n19: 0 5\r\n")
+	cases := map[string]int{"8: -1\n19: 0 5\n": domain.OJ_AC, "8: -1\n19:  0 5\n": domain.OJ_PE, "8: -1\n19: 0 6\n": domain.OJ_WA}
+	for output, want := range cases {
+		got, err := (&comparator.Comparator{}).Compare(answer, write("user.out", output))
+		if err != nil || got != want {
+			t.Errorf("%q: got %d, want %d (%v)", output, got, want, err)
+		}
+	}
+}
 
 func TestParseMetaReadsWhatIsolateReports(t *testing.T) {
 	oom := isolate.ParseMeta("time:0.052\ntime-wall:0.069\nmax-rss:65864\ncg-mem:65536\ncg-oom-killed:1\nexitsig:9\nstatus:SG\nmessage:Caught fatal signal 9\n")
