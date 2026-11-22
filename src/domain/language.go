@@ -1,7 +1,5 @@
 package domain
 
-import "strings"
-
 // Language describes how to build and run submissions. The ids are the ones stored in
 // solution.language and must not change.
 type Language struct {
@@ -71,7 +69,8 @@ func LanguageByID(id int, java JavaOptions) (Language, bool) {
 	case 1:
 		return Language{Name: "C++", Source: "Main.cc", Compile: cpp, Grader: grader, Run: []string{"./Main"}, Processes: 1}, true
 	case 16:
-		return Language{Name: "C++11", Source: "Main.cc", Compile: append(cpp, "-std=c++11"), Grader: grader, Run: []string{"./Main"}, Processes: 1}, true
+		// The id keeps its old name in the database; the learning paths teach C++17 (gcd, auto [a, b]).
+		return Language{Name: "C++17", Source: "Main.cc", Compile: append(cpp, "-std=c++17"), Grader: grader, Run: []string{"./Main"}, Processes: 1}, true
 	case 3:
 		return Language{
 			Name:    "Java",
@@ -103,10 +102,26 @@ func LanguageByID(id int, java JavaOptions) (Language, bool) {
 			Processes: 64,
 		}, true
 	case 20:
-		// The pseudocode is translated to C++ and judged as a native program.
-		build := "/usr/bin/dos2unix -q Main.psc && /usr/bin/pseint Main.psc --draw Main.psd --fixwincharset --norun pseint.txt" +
-			" && /usr/bin/psexport --lang=cpp Main.psd Main.cc && " + strings.Join(cpp, " ")
-		return Language{Name: "PSeInt", Source: "Main.psc", Compile: []string{"/bin/sh", "-c", build}, Run: []string{"./Main"}, Processes: 1}, true
+		// The interpreter runs the pseudocode as PSeInt itself does (functions, real division,
+		// dynamic arrays). It always exits 0 and prints its errors on stdout, so:
+		// - compiling is a syntax check that fails when pseint prints anything;
+		// - it reads one value per line, so every token of the input goes on its own line;
+		// - it prints "> " before each value it reads: removed at the start of each line;
+		// - "Lin 4 (inst 1): ERROR 296: Division por cero" becomes a runtime error.
+		// ponytail: a program that prints "> " at the start of a line, or reads after
+		// "Escribir Sin Saltar", loses those characters and can get WA.
+		check := `/usr/bin/dos2unix -q Main.psc; out=$(/usr/bin/pseint Main.psc --nouser --norun); [ -z "$out" ] || { printf '%s\n' "$out"; exit 1; }`
+		run := `/usr/bin/tr -s ' \t\r\n' '\n' | /usr/bin/pseint Main.psc --nouser --fortest |` +
+			` /usr/bin/awk '/^(> )*Lin [0-9]+ \(inst [0-9]+\): ERROR/ { sub(/^(> )+/, ""); print > "/dev/stderr"; failed = 1; next }` +
+			` { sub(/^(> )+/, ""); print } END { exit failed }'`
+		return Language{
+			Name:      "PSeInt",
+			Source:    "Main.psc",
+			Compile:   []string{"/bin/sh", "-c", check},
+			Run:       []string{"/bin/sh", "-c", run},
+			Bonus:     true,
+			Processes: 8,
+		}, true
 	}
 	return Language{}, false
 }
