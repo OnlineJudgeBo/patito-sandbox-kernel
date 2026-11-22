@@ -88,6 +88,23 @@ func LanguageByID(id int, java JavaOptions) (Language, bool) {
 		}, true
 	case 6, 17, 19:
 		return python, true
+	case 9:
+		// csc is called directly: "dotnet build" would create a project per submission and take
+		// several seconds. The runtimeconfig tells "dotnet Main.dll" which runtime to load.
+		// W^X makes the runtime map a file as large as its heap and trip the output size limit.
+		env := `export DOTNET_EnableWriteXorExecute=0 DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1;`
+		build := env +
+			` refs=$(for f in /usr/lib/dotnet/packs/Microsoft.NETCore.App.Ref/*/ref/net8.0/*.dll; do printf -- '-r:%s ' "$f"; done);` +
+			` /usr/bin/dotnet /usr/lib/dotnet/sdk/*/Roslyn/bincore/csc.dll -nologo -langversion:latest -optimize+ -out:Main.dll $refs Main.cs &&` +
+			` printf '{"runtimeOptions":{"tfm":"net8.0","framework":{"name":"Microsoft.NETCore.App","version":"8.0.0"}}}' > Main.runtimeconfig.json`
+		return Language{
+			Name:      "C#",
+			Source:    "Main.cs",
+			Compile:   []string{"/bin/sh", "-c", build},
+			Run:       []string{"/bin/sh", "-c", env + " exec /usr/bin/dotnet Main.dll"},
+			Bonus:     true,
+			Processes: 64,
+		}, true
 	case 18:
 		// The build cache stays in /tmp so it is not copied back with the binary.
 		build := "GOCACHE=/tmp/go-build GOTOOLCHAIN=local CGO_ENABLED=0 /usr/bin/go build -o Main Main.go"
@@ -98,6 +115,17 @@ func LanguageByID(id int, java JavaOptions) (Language, bool) {
 			Source:    "Main.js",
 			Compile:   []string{"/usr/local/bin/node", "--check", "Main.js"},
 			Run:       []string{"/usr/local/bin/node", "Main.js"},
+			Bonus:     true,
+			Processes: 64,
+		}, true
+	case 22:
+		// kotlinc is a JVM program: its heap stays below the memory of the compile sandbox.
+		build := "JAVA_OPTS=-Xmx768m /usr/local/lib/kotlinc/bin/kotlinc Main.kt -include-runtime -d Main.jar"
+		return Language{
+			Name:      "Kotlin",
+			Source:    "Main.kt",
+			Compile:   []string{"/bin/sh", "-c", build},
+			Run:       append(jvm[:len(jvm):len(jvm)], "-jar", "Main.jar"),
 			Bonus:     true,
 			Processes: 64,
 		}, true
@@ -128,5 +156,5 @@ func LanguageByID(id int, java JavaOptions) (Language, bool) {
 
 // SupportedLanguageIDs lists every id LanguageByID knows.
 func SupportedLanguageIDs() []int {
-	return []int{0, 1, 3, 6, 16, 17, 18, 19, 20, 21}
+	return []int{0, 1, 3, 6, 9, 16, 17, 18, 19, 20, 21, 22}
 }
