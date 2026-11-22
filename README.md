@@ -26,12 +26,14 @@ Verdicts use the codes the rest of the platform already knows: 4 accepted, 5 pre
 | 0 | C | gcc |
 | 1, 16 | C++ (16 adds `-std=c++11`) | g++ |
 | 3 | Java | OpenJDK 17 |
+| 9 | C# | .NET 8 (`csc` called directly) |
+| 22 | Kotlin | Kotlin 2.1 on OpenJDK 17 |
 | 6, 17, 19 | Python 3 | Python 3.12 |
 | 18 | Go | Go 1.22 |
 | 21 | JavaScript | Node.js 22 |
 | 20 | PSeInt | `pseint` and `psexport` translate to C++, then g++ |
 
-Java, Python and JavaScript get the extra time and memory of `bonusTimeSeconds` and `bonusMemoryMB`.
+Java, Kotlin, C#, Python, JavaScript and PSeInt get the extra time and memory of `bonusTimeSeconds` and `bonusMemoryMB`.
 A submission in any other language is left pending.
 
 ## Configuration
@@ -65,7 +67,7 @@ A submission in any other language is left pending.
 | `sleepSeconds` | seconds between two looks at the queue | 5 |
 | `languages` | language ids this judge may take | every supported one |
 | `javaXms`, `javaXmx` | JVM heap flags | `-Xms64m`, `-Xmx128m` |
-| `bonusTimeSeconds`, `bonusMemoryMB` | extra allowance for Java, Python and JavaScript | 0 |
+| `bonusTimeSeconds`, `bonusMemoryMB` | extra allowance for Java, Kotlin, C#, Python, JavaScript and PSeInt | 0 |
 | `similarity` | keep accepted contest sources and serve similarity requests | true |
 | `stuckMinutes` | queue again a submission claimed this long ago without a verdict; 0 turns it off | 15 |
 | `shadow` | compare with the previous judge instead of judging (see below) | false |

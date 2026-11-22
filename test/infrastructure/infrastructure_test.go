@@ -52,7 +52,7 @@ func TestBuildOptionsAppliesEveryLimit(t *testing.T) {
 		Args: []string{"./Main"}, Stdin: "data.in", Stdout: "user.out", Stderr: "error.out",
 		TimeSec: 2, MemoryKB: 65536, OutputKB: 1024, Processes: 1,
 	}), " ")
-	for _, expected := range []string{"--cg", "--box-id=3", "--meta=/meta/3", "--cg-mem=65536", "--time=2.000", "--fsize=1024", "--processes=1",
+	for _, expected := range []string{"--cg", "--box-id=3", "--meta=/meta/3", "--cg-mem=65536", "--time=2.000", "--fsize=1024", "--processes=1", "--open-files=256",
 		"--stdin=data.in", "--stdout=user.out", "--stderr=error.out", "--run -- ./Main"} {
 		if !strings.Contains(args, expected) {
 			t.Fatalf("missing %q in: %s", expected, args)

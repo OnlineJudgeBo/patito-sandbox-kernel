@@ -60,6 +60,8 @@ func BuildOptions(boxID int, meta string, request abstractions.RunRequest) []str
 		"--extra-time=0.5",
 		fmt.Sprintf("--fsize=%d", request.OutputKB),
 		fmt.Sprintf("--processes=%d", max(request.Processes, 1)),
+		// isolate allows 64 by default; the C# compiler and runtime load more assemblies than that.
+		"--open-files=256",
 		// Compilers and runtimes need their configuration and a search path.
 		"--dir=/etc",
 		"--env=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
